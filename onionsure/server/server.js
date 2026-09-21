@@ -10,6 +10,7 @@ const config = require('./config');
 const api = require('./api');
 const { seed } = require('./seed');
 const realtime = require('./realtime');
+const inspectionRoutes = require('./inspection-routes');
 
 const app = express();
 app.use(cors());
@@ -20,6 +21,35 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok', service: 'onionsur
 
 // API
 app.use('/api', api);
+
+/* Spec-shaped workflow API (POST/GET/PATCH/PUT/DELETE /api/inspections …).
+   Mounted AFTER the original router on purpose: Express matches in
+   registration order, so every path the app already serves keeps its current
+   handler and only genuinely new spec paths are added. This exposes the full
+   unified workflow (inspections → sensor-readings → images → ai-analysis →
+   fusion → certificate) without breaking any existing screen.
+   Collection aliases in db.js ensure these routes read and write the SAME
+   records as the rest of the system — one backbone, one source of truth. */
+app.use('/api/inspections', inspectionRoutes);
+
+// Consolidated management CRUD (fills the gaps so every spec entity has full
+// Create/Read/Update/Delete). Mounted after the original router so existing
+// paths keep their handlers and only new paths are added.
+const crudRoutes = require('./crud-routes');
+app.use('/api', crudRoutes);
+
+/* Unknown /api/* paths must return a JSON 404 — NOT the SPA's index.html.
+   Without this, the catch-all SPA fallback below answers every unmatched API
+   route with HTML and a 200, so the client tries to parse "<!doctype html>"
+   as JSON and surfaces a confusing "Unexpected token '<'" error instead of a
+   clean "endpoint not found". */
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'Not found', path: req.originalUrl });
+});
+
+// Serve captured inspection images (server/image-routes.js stores them under
+// server/uploads/inspections/<inspectionId>/ and exposes the /uploads URL).
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Serve built frontend if present (production single-server deploy)
 const webDist = path.join(__dirname, '..', 'web', 'dist');

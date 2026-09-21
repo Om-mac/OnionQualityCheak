@@ -10,7 +10,7 @@ Workflow per frame:
   - Segmentation model finds onion bounding boxes + masks
   - Filters false positives (tiny boxes, edge artifacts, bad aspect ratios)
   - For each valid onion, crop with padding and run classification
-  - Display: green box = healthy, red box = unhealthy
+  - Display: blue box = healthy, red box = unhealthy
   - Show segmentation masks, confidence scores, statistics
 
 Usage:
@@ -71,7 +71,7 @@ CAPTURES_DIR = BASE_DIR / "live_captures"
 CAPTURES_DIR.mkdir(exist_ok=True)
 
 # Colors (BGR)
-COLOR_HEALTHY = (0, 200, 0)     # green
+COLOR_HEALTHY = (255, 0, 0)     # blue (green removed so the video stays clear)
 COLOR_UNHEALTHY = (0, 0, 255)    # red
 COLOR_UNKNOWN = (128, 128, 128)  # gray
 
@@ -133,7 +133,7 @@ class LocalOnionQualityInspector:
         self.show_stats = True
         self.show_confidence = True
         self.show_fps = True
-        self.show_masks = True
+        self.show_masks = False  # masks OFF by default so the live video isn't covered in green
         self.show_debug = False
 
         # FPS
@@ -237,6 +237,8 @@ class LocalOnionQualityInspector:
         return detections
 
     def draw_masks(self, frame, detections):
+        """Draw a light mask tint + crisp contour so the video stays clearly visible.
+        Masks are OFF by default (toggle with M)."""
         if not self.show_masks:
             return frame
         overlay = frame.copy()
@@ -246,11 +248,16 @@ class LocalOnionQualityInspector:
             color = COLOR_HEALTHY if det["healthy"] else COLOR_UNHEALTHY
             mask = det["mask"]
             mask_bool = mask > 0.5
+            # Very light 15% fill — onion clearly visible underneath
             overlay[mask_bool] = cv2.addWeighted(
-                overlay[mask_bool], 0.4,
-                np.full_like(frame[mask_bool], color), 0.6, 0
+                overlay[mask_bool], 0.85,
+                np.full_like(frame[mask_bool], color), 0.15, 0
             )
-        return cv2.addWeighted(overlay, 0.6, frame, 0.4, 0)
+            # Crisp outline for clear boundaries without covering the view
+            mask_u8 = (mask_bool.astype(np.uint8)) * 255
+            contours, _ = cv2.findContours(mask_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            cv2.drawContours(overlay, contours, -1, color, 2)
+        return overlay
 
     def draw_detection(self, frame, det, idx):
         x1, y1, x2, y2 = det["bbox"]

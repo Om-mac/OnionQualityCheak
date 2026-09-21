@@ -9,6 +9,7 @@ import { motion } from 'framer-motion';
 import { api } from '../../lib/api';
 import { GradeBadge, ProgressBar } from '../../components/ui';
 import { PageTransition, Stagger, StaggerItem, AnimatedNumber } from '../../components/motion';
+import { MOCK_FARMER_INSPECTIONS, getMockReportDetail } from './mockFarmerData';
 
 /* ── helpers ── */
 function gradeColor(grade: string) {
@@ -88,23 +89,63 @@ export default function FarmerReport() {
   const [inspection, setInspection] = useState<any>(null);
   const [certDetail, setCertDetail] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [isUsingMock, setIsUsingMock] = useState(false);
 
   useEffect(() => {
-    api.getInspections().then((all) => {
-      setInspections(all || []);
-      if (id) {
-        const found = all.find((i: any) =>
-          String(i.id) === id || String(i.inspectionId) === id || i.certificateNumber === id,
-        );
-        setInspection(found || null);
-        api.getCertificate(id)
-          .then(setCertDetail)
-          .catch(() => {
-            if (found?.certificateNumber)
-              api.getCertificate(found.certificateNumber).then(setCertDetail).catch(() => {});
-          });
-      }
-    }).finally(() => setLoading(false));
+    api.getInspections()
+      .then((all) => {
+        const hasReal = Array.isArray(all) && all.length > 0;
+        const list = hasReal ? all : MOCK_FARMER_INSPECTIONS;
+        setIsUsingMock(!hasReal);
+        setInspections(list);
+
+        if (id) {
+          const found = list.find((i: any) =>
+            String(i.id) === id ||
+            String(i.inspectionId) === id ||
+            i.certificateNumber === id ||
+            i.lotNumber === id
+          );
+
+          if (found) {
+            setInspection(found);
+            if (!hasReal || String(found.id).startsWith('insp_mock_')) {
+              setCertDetail(getMockReportDetail(id));
+            } else {
+              api.getCertificate(id)
+                .then(setCertDetail)
+                .catch(() => {
+                  if (found?.certificateNumber) {
+                    api.getCertificate(found.certificateNumber)
+                      .then(setCertDetail)
+                      .catch(() => setCertDetail(getMockReportDetail(id)));
+                  } else {
+                    setCertDetail(getMockReportDetail(id));
+                  }
+                });
+            }
+          } else {
+            const fallback = getMockReportDetail(id);
+            if (fallback) {
+              setInspection(fallback.inspection);
+              setCertDetail(fallback);
+              setIsUsingMock(true);
+            }
+          }
+        }
+      })
+      .catch(() => {
+        setIsUsingMock(true);
+        setInspections(MOCK_FARMER_INSPECTIONS);
+        if (id) {
+          const fallback = getMockReportDetail(id);
+          if (fallback) {
+            setInspection(fallback.inspection);
+            setCertDetail(fallback);
+          }
+        }
+      })
+      .finally(() => setLoading(false));
   }, [id]);
 
   /* ── loading skeleton ── */
@@ -133,15 +174,23 @@ export default function FarmerReport() {
           style={{ background: 'linear-gradient(135deg,#0B5D3B 0%,#0d6b44 45%,#06452C 100%)', boxShadow: '0 8px 32px rgba(11,93,59,0.28)' }}
         >
           <div className="pointer-events-none absolute -right-14 -top-14 h-60 w-60 rounded-full bg-white/[0.06]" />
-          <div className="relative flex items-center gap-4">
-            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-white/15 border border-white/20">
-              <FileText size={22} />
+          <div className="relative flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="grid h-12 w-12 place-items-center rounded-2xl bg-white/15 border border-white/20">
+                <FileText size={22} />
+              </div>
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-emerald-200/70 mb-0.5">My Farm</p>
+                <h1 className="text-2xl font-extrabold tracking-tight">Inspection Reports</h1>
+                <p className="text-[13px] text-emerald-100/70 mt-0.5">Select a lot to view the full transparent quality report.</p>
+              </div>
             </div>
-            <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-emerald-200/70 mb-0.5">My Farm</p>
-              <h1 className="text-2xl font-extrabold tracking-tight">Inspection Reports</h1>
-              <p className="text-[13px] text-emerald-100/70 mt-0.5">Select a lot to view the full transparent quality report.</p>
-            </div>
+            {isUsingMock && (
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/15 backdrop-blur-sm border border-white/20 px-3.5 py-1 text-xs font-semibold text-emerald-100">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                Sample Demo Data Active
+              </span>
+            )}
           </div>
         </motion.div>
 
@@ -270,6 +319,11 @@ export default function FarmerReport() {
         </div>
         {lotNumber && (
           <div className="flex items-center gap-2">
+            {isUsingMock && (
+              <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[11px] font-bold text-forest">
+                Sample Report
+              </span>
+            )}
             <span className="text-[11px] text-muted font-medium">Central Lot ID</span>
             <span className="rounded-xl bg-ink px-3 py-1.5 text-[12px] font-bold text-white font-mono tracking-wider">
               {lotNumber}

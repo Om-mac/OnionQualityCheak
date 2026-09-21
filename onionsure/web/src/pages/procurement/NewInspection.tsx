@@ -7,10 +7,14 @@ import { Badge, Spinner } from '../../components/ui';
 import { PageTransition } from '../../components/motion';
 import { FarmerSelector } from '../../components/FarmerSelector';
 
+import { useInspection } from '../../context/InspectionContext';
+import { WorkflowHeader } from '../../components/procurement/WorkflowHeader';
+
 const CROPS = ['Onion', 'Potato', 'Tomato', 'Garlic', 'Chilli'];
 
 export default function NewInspection() {
   const nav = useNavigate();
+  const { createInspection, activeInspection } = useInspection();
   const [centers, setCenters] = useState<any[]>([]);
   const [fpos, setFpos] = useState<any[]>([]);
   const [form, setForm] = useState({
@@ -49,23 +53,36 @@ export default function NewInspection() {
     if (!isValid) { setErr('Please complete all required fields.'); return; }
     setBusy(true); setErr('');
     try {
-      const lot = await api.createLot({
-        farmerId: form.farmerId, fpoId: form.fpoId || undefined,
-        crop: form.crop, variety: form.variety,
-        quantityKg: Number(form.quantityKg),
+      const selectedCenter = centers.find(c => c.id === form.procurementCenterId);
+      const selectedFpo = fpos.find(f => f.id === form.fpoId);
+      const farmerName = form.farmerDetails?.fullName || form.farmerDetails?.name || 'Ramesh Patil';
+
+      const rec = await createInspection({
+        farmerId: form.farmerId,
+        farmerName,
+        fpoId: form.fpoId,
+        fpoName: selectedFpo?.name || 'Nashik Farmers Producer Co.',
         procurementCenterId: form.procurementCenterId,
-        lotNumber: form.centralLotId || undefined,
+        centreId: form.procurementCenterId,
+        centreName: selectedCenter?.name || 'Nashik Central Mandi',
+        crop: form.crop,
+        variety: form.variety,
+        quantity: Number(form.quantityKg),
+        unit: 'KG',
+        lotId: form.centralLotId,
       });
-      const inspection = await api.startInspection({ lotId: lot.id, sampleWeightKg: 1.5, mode: 'STANDARD' });
-      localStorage.setItem('onionsure_current_inspection_id', inspection.id);
-      localStorage.setItem('onionsure_current_lot_id', lot.id);
-      nav(`/quality/assessment/${inspection.id}`);
-    } catch (e: any) { setErr(e.message); }
+
+      // Store current inspection ID for Fusion page
+      localStorage.setItem('onionsure_current_inspection_id', rec.id);
+
+      nav(`/quality/live-sensor?inspectionId=${rec.id}`);
+    } catch (e: any) { setErr(e.message || 'Failed to create lot inspection'); }
     finally { setBusy(false); }
   };
 
   return (
     <PageTransition className="space-y-5">
+      <WorkflowHeader />
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}

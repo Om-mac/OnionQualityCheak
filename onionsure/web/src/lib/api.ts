@@ -63,19 +63,57 @@ export const api = {
   getFpos: () => req<any[]>('/fpos'),
 
   // inspection
-  startInspection: (payload: any) => req<{ id: string }>('/inspection/start', { method: 'POST', body: payload }),
+  startInspection: (payload: any) => req<any>('/inspection/start', { method: 'POST', body: payload }),
   getInspection: (id: string) => req<any>(`/inspection/${id}`),
   addImage: (id: string, payload: any) => req(`/inspection/${id}/images`, { method: 'POST', body: payload }),
   addSensor: (id: string, payload: any) => req(`/inspection/${id}/sensors`, { method: 'POST', body: payload }),
+  runAIAnalysis: (id: string, payload: any) => req<any>(`/inspections/${id}/ai-analysis`, { method: 'POST', body: payload }),
+
+  // live camera — upload a captured frame as a real file (persisted on disk so
+  // the AI service can run inference on it). Returns { images:[{id,url,...}] }.
+  uploadInspectionImage: (id: string, file: File, meta?: { imageType?: string; captureDevice?: string; description?: string }) => {
+    const form = new FormData();
+    form.append('images', file);
+    if (meta?.imageType) form.append('imageType', meta.imageType);
+    if (meta?.captureDevice) form.append('captureDevice', meta.captureDevice);
+    if (meta?.description) form.append('description', meta.description);
+    return fetch(`${API_BASE}/inspections/${id}/images`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${getToken() || ''}` },
+      body: form,
+    }).then(async (r) => {
+      if (!r.ok) throw new Error((await r.json().catch(() => ({})))?.error || 'Image upload failed');
+      return r.json();
+    });
+  },
+  // live camera — real-time detection: forwards a browser frame (data URL) to the
+  // Python YOLO service and returns the ACTUAL detections + counts.
+  // (mounted under /ai-analysis/live-detect on the backend, reusing the same
+  //  ONIONCHECK / Roboflow integration as the capture-time analysis)
+  liveDetect: (id: string, dataUrl: string, opts?: { confidenceThreshold?: number }) =>
+    req<any>(`/inspections/${id}/ai-analysis/live-detect`, { method: 'POST', body: { image: dataUrl, confidenceThreshold: opts?.confidenceThreshold || 0.25 } }),
+  // live camera — mark image capture complete (status -> CAMERA_COMPLETED)
+  completeCameraCapture: (id: string) => req<any>(`/inspections/${id}/images/complete`, { method: 'POST' }),
+  // live camera — remove a captured sample image
+  deleteInspectionImage: (id: string, imageId: string) => req<any>(`/inspections/${id}/images/${imageId}`, { method: 'DELETE' }),
   analyzeInspection: (id: string, payload: any) => req<{ vision: VisionResult; gas: GasResult; environment: EnvResult; fusion: FusionResult }>(`/inspection/${id}/analyze`, { method: 'POST', body: payload }),
   updateInspectionStep: (id: string, step: number, status?: string) => req<any>(`/inspection/${id}/step`, { method: 'PATCH', body: { step, status } }),
 
   // vision
   visionAnalyze: (payload: any) => req<VisionResult>('/vision/analyze', { method: 'POST', body: payload }),
-  visionAnalyzeImage: (file: File, pixelsPerCm?: number) => {
+  /**
+   * Multipart vision analysis (OnionCheck / Roboflow bridge).
+   *
+   * When `inspectionId` is provided the backend persists the resulting AI
+   * analysis + per-detection boxes under that exact Inspection ID, so the
+   * captured evidence survives a refresh and is available to Fusion
+   * Intelligence, History, Reports and Certificates.
+   */
+  visionAnalyzeImage: (file: File, pixelsPerCm?: number, inspectionId?: string) => {
     const form = new FormData();
     form.append('image', file);
     if (pixelsPerCm != null) form.append('pixels_per_cm', String(pixelsPerCm));
+    if (inspectionId) form.append('inspectionId', inspectionId);
     return fetch(`${API_BASE}/vision/analyze`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${getToken() || ''}` },
@@ -175,7 +213,7 @@ export const api = {
     }),
 
   // certificates
-  generateCertificate: (payload: any) => req<Certificate>('/certificates/generate', { method: 'POST', body: payload }),
+  generateCertificate: (payload: any) => req<any>('/certificates/generate', { method: 'POST', body: payload }),
   getCertificates: () => req<Certificate[]>('/certificates'),
   getCertificate: (id: string) => req<any>(`/certificates/${id}`),
   certificatePdf: (id: string) => req<any>(`/certificates/${id}/pdf`),

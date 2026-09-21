@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { Spinner } from '../components/ui';
+import { getMockReportDetail } from './farmer/mockFarmerData';
 
 export default function CertificateView() {
   const { id } = useParams();
@@ -30,10 +31,30 @@ export default function CertificateView() {
 
   useEffect(() => {
     let active = true;
-    const load = () =>
+    const load = () => {
+      if (id && (id.includes('mock') || id.startsWith('CERT-ON-2026-004') || id.startsWith('CERT-ON-2026-003'))) {
+        const mock = getMockReportDetail(id);
+        if (mock) {
+          if (active) {
+            setData(mock);
+            setErr('');
+          }
+          return;
+        }
+      }
       api.getCertificate(id!)
         .then((d) => active && setData(d))
-        .catch((e) => active && setErr(e.message));
+        .catch((e) => {
+          if (!active) return;
+          const mock = getMockReportDetail(id);
+          if (mock) {
+            setData(mock);
+            setErr('');
+          } else {
+            setErr(e.message);
+          }
+        });
+    };
     load();
     const iv = setInterval(load, 15000);
     return () => {

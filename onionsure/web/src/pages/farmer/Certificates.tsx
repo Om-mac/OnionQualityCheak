@@ -5,14 +5,30 @@ import { motion } from 'framer-motion';
 import { api } from '../../lib/api';
 import { GradeBadge, ProgressBar } from '../../components/ui';
 import { PageTransition, Stagger, StaggerItem, AnimatedNumber } from '../../components/motion';
+import { MOCK_FARMER_CERTIFICATES } from './mockFarmerData';
 
 export default function FarmerCertificates() {
   const nav = useNavigate();
   const [certs, setCerts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isUsingMock, setIsUsingMock] = useState(false);
 
   useEffect(() => {
-    api.getCertificates().then(setCerts).finally(() => setLoading(false));
+    api.getCertificates()
+      .then((data) => {
+        if (data && data.length > 0) {
+          setCerts(data);
+          setIsUsingMock(false);
+        } else {
+          setCerts(MOCK_FARMER_CERTIFICATES);
+          setIsUsingMock(true);
+        }
+      })
+      .catch(() => {
+        setCerts(MOCK_FARMER_CERTIFICATES);
+        setIsUsingMock(true);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) {
@@ -37,17 +53,25 @@ export default function FarmerCertificates() {
       >
         <div className="absolute -right-10 -top-10 h-48 w-48 rounded-full bg-white/5 pointer-events-none" />
         <div className="absolute right-16 bottom-0 h-28 w-28 rounded-full bg-fresh/10 pointer-events-none" />
-        <div className="relative">
-          <div className="flex items-center gap-2 mb-1">
-            <div className="grid h-9 w-9 place-items-center rounded-xl bg-white/15"><Award size={18} /></div>
-            <span className="text-sm font-bold text-emerald-200 uppercase tracking-wider">My Farm</span>
+        <div className="relative flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <div className="grid h-9 w-9 place-items-center rounded-xl bg-white/15"><Award size={18} /></div>
+              <span className="text-sm font-bold text-emerald-200 uppercase tracking-wider">My Farm</span>
+            </div>
+            <h1 className="text-2xl font-extrabold">My Quality Certificates</h1>
+            <p className="mt-1 text-sm text-emerald-100/80">
+              {certs.length > 0
+                ? `${certs.length} digital certificate${certs.length > 1 ? 's' : ''} — scan QR to verify anytime.`
+                : 'Certificates will appear here after your lot is inspected and graded.'}
+            </p>
           </div>
-          <h1 className="text-2xl font-extrabold">My Quality Certificates</h1>
-          <p className="mt-1 text-sm text-emerald-100/80">
-            {certs.length > 0
-              ? `${certs.length} digital certificate${certs.length > 1 ? 's' : ''} — scan QR to verify anytime.`
-              : 'Certificates will appear here after your lot is inspected and graded.'}
-          </p>
+          {isUsingMock && (
+            <span className="inline-flex items-center gap-2 rounded-full bg-white/15 backdrop-blur-sm border border-white/20 px-3.5 py-1 text-xs font-semibold text-emerald-100">
+              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+              Sample Demo Data Active
+            </span>
+          )}
         </div>
       </motion.div>
 

@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+<head>
+<style>
+@layer components {
+  .test-forest-100 {
+    @apply bg-forest-100;
+  }
+}
+</style>
+</head>
+<body>
+<div class="test-forest-100">Forest test</div>
+<div class="bg-forest-100">Direct class</div>
+</body>
+</html>

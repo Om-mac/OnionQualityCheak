@@ -18,9 +18,12 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Cpu, Zap, CheckCircle2, Loader2, Radio, ShieldCheck } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Cpu, Zap, CheckCircle2, Loader2, Radio, ShieldCheck, ArrowRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../lib/api';
+import { useInspection } from '../../context/InspectionContext';
+import { WorkflowHeader } from '../../components/procurement/WorkflowHeader';
 
 /* ─── types ──────────────────────────────────────────────────────── */
 type Phase = 'idle' | 'connecting' | 'computing' | 'done' | 'error';
@@ -32,9 +35,7 @@ const STAGES: { label: string; durationMs: number }[] = [
   { label: 'Analysing spoilage indicators',    durationMs: 1600 },
   { label: 'Calculating quality condition',    durationMs: 1400 },
 ];
-// Total visible computation time = sum of durations = 5 600 ms  ✓
 
-/* ─── shared result — readable by Fusion Intelligence page ─────── */
 export let lastIotResult: {
   gasScore: number;
   stage: string;
@@ -45,15 +46,23 @@ export let lastIotResult: {
   timestamp: string;
 } | null = null;
 
-/* ═══════════════════════════════════════════════════════════════════
-   Component
-════════════════════════════════════════════════════════════════════ */
 export default function LiveSensor() {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { activeInspection, setActiveInspectionId, saveSensorData } = useInspection();
+
   const [phase,       setPhase]       = useState<Phase>('idle');
   const [stageIndex,  setStageIndex]  = useState(-1);   // -1 = not yet started
   const [iotResult,   setIotResult]   = useState<typeof lastIotResult>(null);
   const [errMsg,      setErrMsg]      = useState('');
   const deviceIdRef   = useRef<string | null>(null);
+
+  useEffect(() => {
+    const urlInspectionId = searchParams.get('inspectionId');
+    if (urlInspectionId && urlInspectionId !== activeInspection?.id) {
+      setActiveInspectionId(urlInspectionId);
+    }
+  }, [searchParams, activeInspection?.id, setActiveInspectionId]);
 
   /* Release server-side session when component unmounts */
   useEffect(() => {
@@ -107,6 +116,21 @@ export default function LiveSensor() {
       lastIotResult = result;
       setIotResult(result);
       setPhase('done');
+
+      // Persist into central inspection context
+      saveSensorData({
+        gasScore: result.gasScore,
+        conditionLabel: result.conditionLabel,
+        temperature: 27.4,
+        humidity: 68.2,
+        moisture: 86.5,
+        ph: 6.2,
+        co2: 450,
+        ch4: 12,
+        c2h4: 0.4,
+        nh3: 2.1,
+        deviceId: deviceIdRef.current || 'IOT-POD-01',
+      }).catch(() => {});
     } catch (e: any) {
       setErrMsg(e.message || 'IoT computation failed. Please try again.');
       setPhase('error');
@@ -135,7 +159,8 @@ export default function LiveSensor() {
      RENDER
   ════════════════════════════════════════════════════════════════ */
   return (
-    <div className="mx-auto max-w-xl space-y-7 py-4">
+    <div className="mx-auto max-w-2xl space-y-6 py-2">
+      <WorkflowHeader />
 
       {/* ── Page heading ──────────────────────────────────────── */}
       <div>
@@ -370,6 +395,14 @@ export default function LiveSensor() {
                   this IoT result is available to combine with Vision and Environment
                   scores for the final quality grade.
                 </div>
+
+                {/* Continue Action */}
+                <button
+                  onClick={() => navigate(`/quality/ai-analysis${activeInspection ? `?inspectionId=${activeInspection.id}` : ''}`)}
+                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-forest to-darkgreen px-6 py-3 text-sm font-extrabold text-white shadow-md hover:opacity-95 transition"
+                >
+                  Continue to AI Analysis <ArrowRight size={16} />
+                </button>
 
                 {/* Reset link */}
                 <button

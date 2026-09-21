@@ -8,13 +8,35 @@ export function Card({ className, children, hover = false, ...p }: React.HTMLAtt
       <motion.div
         whileHover={{ y: -2 }}
         transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-        className={clsx('card p-5', className)} {...p}
+        className={clsx('card p-5', className)} {...(p as any)}
       >
         {children}
       </motion.div>
     );
   }
   return <div className={clsx('card p-5', className)} {...p}>{children}</div>;
+}
+
+/** Styled button primitive used across dashboard pages. */
+export function Button({
+  onClick,
+  type = 'button',
+  disabled,
+  className,
+  children,
+  ...p
+}: React.HTMLAttributes<HTMLButtonElement> & { type?: 'button' | 'submit' | 'reset'; onClick?: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type={type}
+      disabled={disabled}
+      onClick={onClick}
+      className={clsx('inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-bold', className)}
+      {...p}
+    >
+      {children}
+    </button>
+  );
 }
 
 export function SectionTitle({

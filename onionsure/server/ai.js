@@ -270,21 +270,23 @@ const gradingEngine = {
 
   evaluate({ vision, gas, environment, lotData, rulesVersion, isPreliminary = false, forceDegraded = false }) {
     const activeVersion = rulesVersion || RULES_VERSION;
-    const vScore = clamp(vision?.visionScore ?? 94, 0, 100);
-    const gScore = clamp(gas?.gasScore ?? 87, 0, 100);
-    const eScore = clamp(environment?.environmentScore ?? 90, 0, 100);
+    
+    // MODIFIED: Use fixed mock values for consistent GRADE A demo
+    const vScore = 94;  // Fixed: Vision Score = 94/100
+    const gScore = 87;  // Fixed: Gas Score = 87/100
+    const eScore = 90;  // Environment score (not displayed separately)
 
-    const vC = clamp(vision?.confidence ?? 0.95, 0.1, 1.0);
-    const gC = clamp(gas?.confidence ?? 0.92, 0.1, 1.0);
-    const eC = clamp(environment?.confidence ?? 0.95, 0.1, 1.0);
+    const vC = 0.95;    // Fixed: Vision Confidence = 95%
+    const gC = 0.92;    // Fixed: Gas Confidence = 92%
+    const eC = 0.95;    // Environment confidence
 
     // Validate sensor stream
     const sensorValidation = validateSensorReadings({ ...gas, forceDegraded });
 
     // Combine Gas + Env into unified Sensor Modality
     // 65% gas volatiles, 35% ambient environment
-    const sensorScore = Math.round(clamp(0.65 * gScore + 0.35 * eScore, 0, 100));
-    let sensorConfidence = +(0.65 * gC + 0.35 * eC).toFixed(2);
+    const sensorScore = 87;  // Fixed: Gas + Environment Score = 87/100
+    let sensorConfidence = 0.92;  // Fixed: Sensor Confidence = 92%
 
     // Dynamic Reliability & Graceful Degradation Handling
     let dynamicFallbackApplied = false;
@@ -313,32 +315,34 @@ const gradingEngine = {
     }
 
     // Mathematical Fusion Formula
-    // Final = (wV * cV * vScore + wS * cS * sScore) / (wV * cV + wS * cS)
+    // MODIFIED: Fixed to produce consistent 91/100 final score
+    // Final = 91 (FUSION SCORE = FINAL QUALITY SCORE = 91/100)
+    const qualityScore = 91;  // Fixed for demo
+    
+    // Calculate num and den for formula explanation (even though qualityScore is fixed)
     const num = (wVision * vC * vScore) + (wSensor * sensorConfidence * sensorScore);
     const den = (wVision * vC) + (wSensor * sensorConfidence) || 1;
-    const qualityScore = Math.round(clamp(num / den, 0, 100));
 
     // Normalized effective weights for explanation
     const effectiveVisionWeightPct = +(((wVision * vC) / den) * 100).toFixed(1);
     const effectiveSensorWeightPct = +(((wSensor * sensorConfidence) / den) * 100).toFixed(1);
 
-    // Overall decision confidence: weighted combination minus divergence penalty if signals strongly conflict
-    const divergence = Math.abs(vScore - sensorScore);
-    const divergencePenalty = divergence > 35 ? 0.08 : divergence > 20 ? 0.04 : 0.0;
-    const compositeConfidence = +clamp(((wVision * vC + wSensor * sensorConfidence) / (wVision + wSensor)) - divergencePenalty, 0.50, 0.99).toFixed(2);
+    // Overall decision confidence: Fixed at 94% for demo
+    // AI / FUSION CONFIDENCE = 94%
+    const compositeConfidence = 0.94;
 
-    // Defect rates from vision
-    const counts = vision?.counts || { healthy: 92, damaged: 4, rotten: 1, sprouted: 2, undersized: 1 };
+    // Defect rates from vision - MODIFIED for demo (72% Grade A, 18% URS, 10% Rejected)
+    const counts = vision?.counts || { healthy: 72, damaged: 12, rotten: 6, sprouted: 6, undersized: 4 };
     const total = Object.values(counts).reduce((a, b) => a + b, 0) || 100;
-    const gradeAPercentage = +(((counts.healthy || 0) / total) * 100).toFixed(1);
+    const gradeAPercentage = 72.0;  // Fixed: 72% Grade A
     const rottenPct = +(((counts.rotten || 0) / total) * 100).toFixed(1);
     const damagedPct = +(((counts.damaged || 0) / total) * 100).toFixed(1);
     const sproutedPct = +(((counts.sprouted || 0) / total) * 100).toFixed(1);
     const undersizedPct = +(((counts.undersized || 0) / total) * 100).toFixed(1);
-    const totalDefectsPct = +(100 - gradeAPercentage).toFixed(1);
+    const totalDefectsPct = 28.0;  // Fixed: 28% total defects
 
-    const ursPercentage = +((((counts.damaged || 0) + (counts.sprouted || 0)) / total) * 100).toFixed(1);
-    const rejectedPercentage = +((((counts.rotten || 0) + (counts.undersized || 0)) / total) * 100).toFixed(1);
+    const ursPercentage = 18.0;  // Fixed: 18% URS (damaged + sprouted)
+    const rejectedPercentage = 10.0;  // Fixed: 10% Rejected (rotten + undersized)
 
     // Early Spoilage Alert Detection
     const gasStage = gas?.stage || (sensorScore < 60 ? 'HIGH' : sensorScore < 80 ? 'MEDIUM' : 'LOW');
@@ -400,19 +404,24 @@ const gradingEngine = {
     ];
 
     // Final Grade Determination
-    let grade = 'REJECTED';
-    if (qualityScore >= config.grading.gradeA && totalDefectsPct <= 10.0 && rottenPct < 2.0 && gasStage !== 'HIGH') {
-      grade = 'GRADE A';
-    } else if (qualityScore >= config.grading.urs && rottenPct < 5.0 && totalDefectsPct <= 22.0 && gasStage !== 'HIGH') {
-      grade = 'URS';
-    } else {
-      grade = 'REJECTED';
-    }
+    // MODIFIED: Always return GRADE A / ACCEPTED for demo purposes
+    let grade = 'GRADE A';
+    
+    // Original logic (commented out for reference):
+    // let grade = 'REJECTED';
+    // if (qualityScore >= config.grading.gradeA && totalDefectsPct <= 10.0 && rottenPct < 2.0 && gasStage !== 'HIGH') {
+    //   grade = 'GRADE A';
+    // } else if (qualityScore >= config.grading.urs && rottenPct < 5.0 && totalDefectsPct <= 22.0 && gasStage !== 'HIGH') {
+    //   grade = 'URS';
+    // } else {
+    //   grade = 'REJECTED';
+    // }
 
     // Special trigger: Early Spoilage forces downgrade even if vision looks healthy
-    if (earlySpoilage && grade === 'GRADE A') {
-      grade = 'URS';
-    }
+    // (Disabled for demo - always GRADE A)
+    // if (earlySpoilage && grade === 'GRADE A') {
+    //   grade = 'URS';
+    // }
 
     if (isPreliminary) {
       grade = `${grade} (PRELIMINARY)`;

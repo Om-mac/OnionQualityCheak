@@ -26,7 +26,7 @@ export default function AuditDisputes() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   
   // Filter state
-  const [searchLotId, setSearchLotId] = useState('');
+  const [searchLotId, setSearchLotId] = useState(searchParams.get('lotId') || searchParams.get('search') || '');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterCenter, setFilterCenter] = useState<string>('all');
   const [showFilters, setShowFilters] = useState(false);

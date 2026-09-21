@@ -83,7 +83,7 @@ interface StatTileProps {
   label: string;
   value: React.ReactNode;
   sub?: string;
-  icon: React.ComponentType<{ size?: number }>;
+  icon: React.ComponentType<any>;
   accent?: 'green' | 'blue' | 'amber' | 'red' | 'purple';
   suffix?: string;
   trend?: { value: number; label?: string };

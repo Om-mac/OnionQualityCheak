@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { QrCode, Search, ScanLine, CheckCircle2, AlertTriangle, ShieldCheck, ArrowUpRight } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { QRCodeSVG } from 'qrcode.react';
 import { api } from '../../lib/api';
 import { Spinner, GradeBadge } from '../../components/ui';
 import { PageHeader } from '../../components/PageHeader';
@@ -122,8 +123,19 @@ export default function QrVerify() {
                   ))}
                 </div>
                 <div className="mt-4 rounded-xl bg-mint/40 p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted mb-2">QR Token</p>
-                  <FauxQR seed={data.certificateNumber} />
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted mb-2">QR Code — scan to verify</p>
+                  <div className="inline-block rounded-lg bg-white p-2 border border-forest/15">
+                    <QRCodeSVG
+                      value={`${window.location.origin}/verify/${data.certificateNumber}`}
+                      size={112}
+                      bgColor="#ffffff"
+                      fgColor="#0B5D3B"
+                      level="M"
+                    />
+                  </div>
+                  <p className="mt-2 font-mono text-[11px] text-muted break-all">
+                    {`${window.location.origin}/verify/${data.certificateNumber}`}
+                  </p>
                 </div>
                 <button className="btn-ghost mt-4 w-full justify-center text-sm" onClick={() => nav(`/verify/${data.certificateNumber}`)}>
                   Open public page <ArrowUpRight size={14} />
@@ -145,11 +157,3 @@ export default function QrVerify() {
   );
 }
 
-function FauxQR({ seed }: { seed: string }) {
-  const cells = Array.from({ length: 49 }).map((_, i) => (seed.charCodeAt(i % seed.length) + i * 7) % 3 === 0);
-  return (
-    <div className="grid w-[112px] grid-cols-7 gap-0.5">
-      {cells.map((on, i) => <span key={i} className={`h-3 w-3 rounded-[2px] ${on ? 'bg-forest' : 'bg-white border border-forest/10'}`} />)}
-    </div>
-  );
-}

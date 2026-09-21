@@ -239,6 +239,8 @@ export interface FusionResult {
   persistedByName?: string;
 }
 
+export type InspectionSession = any;
+
 export interface FusionContextResponse {
   centralLotId: string;
   inspectionNumber: string;

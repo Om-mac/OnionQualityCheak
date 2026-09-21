@@ -12,6 +12,11 @@ const config = require('./config');
 
 async function seed() {
   const d = db.get();
+  // Top up the spec-shaped collections (sensor sessions, images, AI analyses/
+  // detections, device + model registries, reassessments) so EVERY feature has
+  // realistic, inter-linked seed data. Idempotent.
+  seedSpecCollections(d);
+
   if (d.users.length > 0) {
     if (!d.lots.some((l) => l.lotNumber === 'ON-2026-00421')) {
       seedMandatory(d);
@@ -303,12 +308,17 @@ function seedMandatory(d) {
     certificateNumber: 'CERT-ON-2026-00421A',
     grade: 'GRADE A',
     qualityScore: 91,
-    grade_a_percentage: 92.0,
-    urs_percentage: 6.0,
-    rejected_percentage: 2.0,
+    grade_a_percentage: 72.0,  // Fixed mock data: 72% Grade A
+    urs_percentage: 18.0,      // Fixed mock data: 18% URS
+    rejected_percentage: 10.0,  // Fixed mock data: 10% Rejected
     qrToken: db.id('qr'),
     latitude: centerA.latitude,
     longitude: centerA.longitude,
+    lotNumber: mandatoryLot.lotNumber,
+    variety: 'Nashik Red',
+    quantityKg: 1500,
+    farmerId: farmerRamesh.id,
+    farmerName: farmerRamesh.fullName,
     createdAt: inspA.completedAt,
   };
   d.quality_certificates.push(certA);
@@ -473,6 +483,142 @@ function seedMandatory(d) {
     timestamp: disputeEntry.createdAt,
     details: `Dispute ${disputeEntry.disputeNumber} filed for ${mandatoryLot.lotNumber}: Incorrect defect detection`,
   });
+
+  db.persist();
+}
+
+/**
+ * Populate the spec-shaped collections that the original seed did not cover,
+ * linked to the existing inspections by inspectionId (the single backbone).
+ * Idempotent: guarded by checking whether records already exist per inspection.
+ */
+function seedSpecCollections(d) {
+  // --- Inspection images (1-2 per inspection, placeholder refs) ---
+  for (const sess of d.inspection_sessions) {
+    if (!d.inspection_images.some((i) => i.inspectionId === sess.id)) {
+      const base = d.inspection_images.length;
+      d.inspection_images.push({
+        id: db.id('img'),
+        inspectionId: sess.id,
+        fileName: `sample_${base + 1}.jpg`,
+        url: `uploads/sample_${base + 1}.jpg`,
+        angle: 'top',
+        quality: 'good',
+        createdAt: sess.startedAt || db.nowISO(),
+      });
+    }
+  }
+
+  // --- Sensor sessions (one per inspection) + link readings via sessionId ---
+  for (const sess of d.inspection_sessions) {
+    if (!d.sensor_sessions.some((s) => s.inspectionId === sess.id)) {
+      const sessionId = db.id('sen');
+      d.sensor_sessions.push({
+        id: sessionId,
+        inspectionId: sess.id,
+        lotId: sess.lotId || null,
+        deviceId: 'DEV-LOKI-01',
+        start: sess.startedAt || sess.createdAt || db.nowISO(),
+        end: sess.completedAt || null,
+        connectivity: 'online',
+        battery: 92,
+        signal: 'good',
+        createdAt: db.nowISO(),
+      });
+      for (const r of d.sensor_readings) {
+        if (r.inspectionId === sess.id && !r.sessionId) r.sessionId = sessionId;
+      }
+    }
+  }
+
+  // --- AI analyses + spec-shaped AI detections per inspection ---
+  for (const sess of d.inspection_sessions) {
+    if (d.ai_analyses.some((a) => a.inspectionId === sess.id)) continue;
+    const dets = d.vision_detections.filter((v) => v.inspectionId === sess.id);
+    const counts = { healthy: 0, damaged: 0, rotten: 0, sprouted: 0, undersized: 0 };
+    for (const det of dets) {
+      const c = (det.class || 'Healthy').toLowerCase();
+      if (c in counts) counts[c] += 1; else counts.healthy += 1;
+    }
+    const fusion = d.fusion_results.find((f) => f.inspectionId === sess.id);
+    if (dets.length === 0) {
+      if (fusion && fusion.grade === 'GRADE A') Object.assign(counts, { healthy: 18, damaged: 1, rotten: 0, sprouted: 1, undersized: 0 });
+      else if (fusion && fusion.grade === 'URS') Object.assign(counts, { healthy: 14, damaged: 3, rotten: 1, sprouted: 2, undersized: 0 });
+      else Object.assign(counts, { healthy: 10, damaged: 4, rotten: 3, sprouted: 2, undersized: 1 });
+    }
+    const analysisId = db.id('ai');
+    const avgConf = dets.length ? +(dets.reduce((s, x) => s + (x.confidence || 0.9), 0) / dets.length).toFixed(2) : 0.92;
+    d.ai_analyses.push({
+      id: analysisId,
+      inspectionId: sess.id,
+      model: 'onion-vision-roboflow',
+      version: '2026.1.0',
+      counts,
+      confidence: avgConf,
+      imageIds: d.inspection_images.filter((i) => i.inspectionId === sess.id).map((i) => i.id),
+      totalDetections: counts.healthy + counts.damaged + counts.rotten + counts.sprouted + counts.undersized,
+      averageConfidence: avgConf,
+      processingTimeMs: 1200 + Math.floor(Math.random() * 800),
+      timestamp: sess.completedAt || sess.startedAt || db.nowISO(),
+    });
+    const sampleImg = (d.inspection_images.find((i) => i.inspectionId === sess.id) || {}).id || null;
+    for (const det of dets) {
+      d.ai_detections.push({
+        id: db.id('det'),
+        analysisId,
+        imageId: det.imageId || sampleImg,
+        class: det.class || 'Healthy',
+        confidence: det.confidence != null ? det.confidence : 0.9,
+        bbox: det.bbox || null,
+        createdAt: db.nowISO(),
+      });
+    }
+    if (dets.length === 0) {
+      // synthesize at least one detection so the collection is populated
+      for (const cls of ['Healthy', 'Damaged', 'Rotten', 'Sprouted', 'Undersized']) {
+        d.ai_detections.push({
+          id: db.id('det'), analysisId, imageId: sampleImg, class: cls,
+          confidence: 0.9, bbox: null, createdAt: db.nowISO(),
+        });
+      }
+    }
+  }
+
+  // --- Sensor device registry ---
+  if (d.sensor_devices.length === 0) {
+    d.sensor_devices.push(
+      { id: db.id('dev'), deviceId: 'DEV-LOKI-01', transport: 'lora', battery: 92, signal: 'good', location: 'Nashik Central Procurement Center', lastSeen: db.nowISO(), status: 'active' },
+      { id: db.id('dev'), deviceId: 'DEV-LOKI-02', transport: 'wifi', battery: 76, signal: 'fair', location: 'Pune FPO Quality Hub', lastSeen: db.nowISO(), status: 'active' },
+    );
+  }
+
+  // --- AI model versions registry ---
+  if (d.ai_model_versions.length === 0) {
+    d.ai_model_versions.push(
+      { id: db.id('mdl'), name: 'onion-vision-roboflow', version: '2026.1.0', type: 'vision', accuracy: 0.94, createdAt: db.nowISO() },
+      { id: db.id('mdl'), name: 'onion-gas-rf', version: '2026.0.3', type: 'sensor', accuracy: 0.89, createdAt: db.nowISO() },
+    );
+  }
+
+  // --- Ensure an active grading rule exists ---
+  if (!d.grading_rules.some((g) => g.active)) {
+    d.grading_rules.push({
+      id: 'rule_onion_2026_v1', version: 'ONION_STANDARD_2026_V1',
+      gradeThresholds: { gradeA: 85, urs: 65 }, sensorThresholds: {}, active: true, createdAt: db.nowISO(),
+    });
+  }
+
+  // --- Reassessment (versioned result change) sample ---
+  if (d.reassessments.length === 0 && d.inspection_sessions.length) {
+    const insp = d.inspection_sessions[0];
+    const officer = d.users.find((u) => u.role === 'procurement_officer') || {};
+    d.reassessments.push({
+      id: db.id('rea'), inspectionId: insp.id, previousResult: 'URS', newResult: 'GRADE A',
+      reason: 'Manual verification confirmed acceptable condition; transit surface moisture within allowable margin.',
+      version: 2, officerId: officer.id || null, officerName: officer.name || 'Officer',
+      createdAt: db.nowISO(),
+    });
+  }
 
   db.persist();
 }

@@ -9,6 +9,8 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': 'http://localhost:4000',
+      // Uploaded inspection images are served by the backend static mount.
+      '/uploads': 'http://localhost:4000',
       // WebSocket live-sync endpoint — proxied so the relative ws://host/ws
       // URL used by lib/realtime.ts resolves to the backend in dev too.
       '/ws': { target: 'ws://localhost:4000', ws: true },

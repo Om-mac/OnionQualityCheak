@@ -22,16 +22,18 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   GitMerge, Eye, Wind, CheckCircle2, AlertTriangle, ShieldCheck,
   Loader2, ArrowRight, RefreshCw, Info, AlertCircle, Zap, Package,
-  User, MapPin, Leaf,
+  User, MapPin, Leaf, Award
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Card, Spinner } from '../../components/ui';
 import type { FusionResult } from '../../lib/types';
+import { useInspection } from '../../context/InspectionContext';
+import { WorkflowHeader } from '../../components/procurement/WorkflowHeader';
 
 /* ─── localStorage key (written by NewInspection.tsx) ───────────── */
 const LS_INSP_KEY = 'onionsure_current_inspection_id';
@@ -119,6 +121,7 @@ function PageHeader() {
 ════════════════════════════════════════════════════════════════════ */
 function FusionWorkspace({ inspectionId }: { inspectionId: string }) {
   const nav = useNavigate();
+  const { activeInspection, saveFusionResult } = useInspection();
 
   const [phase,       setPhase]      = useState<Phase>('loading');
   const [evidence,    setEvidence]   = useState<EvidenceResp | null>(null);
@@ -127,6 +130,22 @@ function FusionWorkspace({ inspectionId }: { inspectionId: string }) {
   const [errMsg,      setErrMsg]     = useState('');
   const [committing,  setCommitting] = useState(false);
   const [committed,   setCommitted]  = useState<{ recordId: string; at: string } | null>(null);
+  const [certBusy,    setCertBusy]   = useState(false);
+
+  /* ── Generate the quality certificate for this inspection ────── */
+  const generateCert = async () => {
+    setCertBusy(true);
+    setErrMsg('');
+    try {
+      const cert = await api.generateCertificate({ inspectionId });
+      const certId = cert?.id || cert?.certificate?._id || cert?.certificateNumber;
+      nav(certId ? `/certificate/${certId}` : '/quality/certificates');
+    } catch (e: any) {
+      setErrMsg(e.message || 'Failed to generate certificate.');
+    } finally {
+      setCertBusy(false);
+    }
+  };
 
   /* ── Load evidence on mount / inspectionId change ────────────── */
   useEffect(() => {
@@ -515,14 +534,26 @@ function FusionWorkspace({ inspectionId }: { inspectionId: string }) {
               </Card>
             )}
 
-            {/* Re-run */}
-            <div className="flex justify-end">
-              <button
-                onClick={() => { setPhase('ready'); setFusion(null); setCommitted(null); }}
-                className="flex items-center gap-1.5 text-[12.5px] font-semibold text-muted transition hover:text-forest hover:underline underline-offset-2"
-              >
-                <RefreshCw size={13} /> Re-run analysis
-              </button>
+            {/* Generate Certificate + Re-run */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              {committed && (
+                <button
+                  onClick={() => void generateCert()}
+                  disabled={certBusy}
+                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-forest to-darkgreen px-5 py-2.5 text-sm font-extrabold text-white shadow-md transition hover:opacity-95 disabled:opacity-50"
+                >
+                  {certBusy ? <Loader2 size={15} className="animate-spin" /> : <Award size={15} />}
+                  Generate Certificate
+                </button>
+              )}
+              <div className="flex justify-end ml-auto">
+                <button
+                  onClick={() => { setPhase('ready'); setFusion(null); setCommitted(null); }}
+                  className="flex items-center gap-1.5 text-[12.5px] font-semibold text-muted transition hover:text-forest hover:underline underline-offset-2"
+                >
+                  <RefreshCw size={13} /> Re-run analysis
+                </button>
+              </div>
             </div>
           </motion.div>
         )}

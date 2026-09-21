@@ -24,14 +24,22 @@ const EMPTY = {
   buyers: [],
   procurement_centers: [],
   lots: [],
+  inspections: [],
   inspection_sessions: [],
   inspection_images: [],
+  ai_analyses: [],
   vision_detections: [],
+  ai_detections: [], // spec-shaped detections (analysisId, imageId, class, bbox)
+  defectDetections: [], // written by the /api/inspections AI route family
   sensor_readings: [], // gas_analysis folded in
+  sensor_sessions: [], // session-level IoT capture (deviceId, connectivity)
+  sensor_devices: [], // device registry
+  ai_model_versions: [], // AI model registry
   fusion_results: [],
   quality_certificates: [],
   qr_verifications: [],
   audit_logs: [],
+  auditEvents: [],
   disputes: [],
   overrides: [],
   reassessments: [],
@@ -67,6 +75,82 @@ const EMPTY = {
 
 let cache = null;
 
+/**
+ * Collection aliases.
+ *
+ * Several route modules were written against slightly different collection
+ * names than the ones actually seeded (e.g. `inspections` vs
+ * `inspection_sessions`, `centers` vs `procurement_centers`). Left alone they
+ * would silently create a SECOND, disconnected data store — two "sources of
+ * truth" for the same inspection, which directly violates the spec's single
+ * Inspection-ID backbone.
+ *
+ * These aliases make every name resolve to the one canonical collection, so
+ * all routes operate on the same records. They are defined non-enumerable so
+ * `JSON.stringify` never writes duplicate copies into db.json.
+ */
+const ALIASES = {
+  inspections: 'inspection_sessions',
+  sensorReadings: 'sensor_readings',
+  images: 'inspection_images',
+  aiAnalyses: 'ai_analyses',
+  fusionResults: 'fusion_results',
+  certificates: 'quality_certificates',
+  qualityCertificates: 'quality_certificates',
+  centers: 'procurement_centers',
+  // One audit trail, not two: these modules logged to `auditEvents` while the
+  // rest of the app used `audit_logs`. Unify so the timeline is complete.
+  auditEvents: 'audit_logs',
+};
+
+/**
+ * If a legacy collection was ever created as its own array, fold its records
+ * into the canonical collection (deduped by id) and delete the legacy key so
+ * the alias can take over. Without this, an older db.json keeps two lists of
+ * inspections and the app shows two conflicting histories.
+ */
+function migrateLegacyCollections(target) {
+  let changed = false;
+  for (const [alias, canonical] of Object.entries(ALIASES)) {
+    if (canonical === 'users') continue; // never touch users
+    if (!Object.prototype.hasOwnProperty.call(target, alias)) continue;
+    const legacy = target[alias];
+    if (!Array.isArray(legacy)) continue;
+    if (!Array.isArray(target[canonical])) target[canonical] = [];
+    const seen = new Set(target[canonical].map((r) => r && r.id));
+    for (const rec of legacy) {
+      if (rec && rec.id && !seen.has(rec.id)) {
+        target[canonical].push(rec);
+        seen.add(rec.id);
+      }
+    }
+    delete target[alias];
+    changed = true;
+  }
+  return changed;
+}
+
+function applyAliases(target) {
+  for (const [alias, canonical] of Object.entries(ALIASES)) {
+    if (Object.prototype.hasOwnProperty.call(target, alias)) {
+      // Still own property: safest fallback is to alias anyway on a duplicate
+      // key name so reads/writes hit canonical data.
+      const existing = target[alias];
+      delete target[alias];
+      if (Array.isArray(existing) && existing.length && Array.isArray(target[canonical]) && !target[canonical].length) {
+        target[canonical] = existing;
+      }
+    }
+    Object.defineProperty(target, alias, {
+      enumerable: false,
+      configurable: true,
+      get() { return target[canonical]; },
+      set(v) { target[canonical] = v; },
+    });
+  }
+  return target;
+}
+
 function ensure() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(DATA_FILE)) {
@@ -75,7 +159,18 @@ function ensure() {
   } else if (!cache) {
     cache = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
   }
-  return cache;
+  // Backfill: an older db.json won't know about collections added later
+  // (e.g. ai_analyses). Seed them as empty arrays so routes never crash.
+  let backfilled = false;
+  for (const [key, value] of Object.entries(EMPTY)) {
+    if (cache[key] === undefined) {
+      cache[key] = JSON.parse(JSON.stringify(value));
+      backfilled = true;
+    }
+  }
+  if (migrateLegacyCollections(cache)) backfilled = true;
+  if (backfilled) persist();
+  return applyAliases(cache);
 }
 
 function persist() {
@@ -126,6 +221,9 @@ module.exports = {
   EMPTY,
   get: () => ensure(),
   persist,
+  // Several route modules call db.save(); it is just persist() under another
+  // name. Without this alias those handlers throw "db.save is not a function".
+  save: () => persist(),
   id,
   nowISO,
   // Generic helpers
@@ -156,6 +254,18 @@ module.exports = {
       persist();
       emit(col, 'remove', gone);
     }
+  },
+  /** Remove EVERY matching record. `remove()` only drops the first match. */
+  removeAll: (col, fn) => {
+    const db = ensure();
+    const keep = [];
+    const gone = [];
+    for (const item of db[col]) (fn(item) ? gone : keep).push(item);
+    if (!gone.length) return 0;
+    db[col] = keep;
+    persist();
+    gone.forEach((g) => emit(col, 'remove', g));
+    return gone.length;
   },
   
   /**

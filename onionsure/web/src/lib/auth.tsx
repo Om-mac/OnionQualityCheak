@@ -28,14 +28,14 @@ interface AuthState {
   loading: boolean;   // true during initial async bootstrap
   ready: boolean;     // false until the first auth check completes
   login: (username: string, password: string) => Promise<User>;
-  register: (payload: any) => Promise<void>;
+  register: (payload: any) => Promise<User>;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthState>({
   user: null, token: null, loading: false, ready: false,
   login: async () => { throw new Error('AuthProvider not mounted'); },
-  register: async () => {},
+  register: async () => { throw new Error('AuthProvider not mounted'); },
   logout: () => {},
 });
 

@@ -7,15 +7,22 @@
   --shadow-soft: 0 1px 2px rgba(20,20,25,0.04), 0 8px 24px rgba(20,20,25,0.05);
   --shadow-card: 0 1px 2px rgba(20,20,25,0.04), 0 12px 32px rgba(20,20,25,0.08);
   --shadow-ring: 0 0 0 1px rgba(20,20,25,0.06);
-  --shadow-glow: 0 0 0 3px rgba(63,174,90,0.15), 0 8px 28px rgba(11,93,59,0.18);
+  --shadow-glow: 0 0 0 3px rgba(255,138,0,0.15), 0 8px 28px rgba(255,87,34,0.18);
   --shadow-lift: 0 4px 6px rgba(20,20,25,0.04), 0 20px 48px rgba(20,20,25,0.10);
+  
+  /* Orange Theme Colors */
+  --primary-orange: #FF8A00;
+  --primary-orange-dark: #FF5722;
+  --primary-orange-light: #FFB74D;
+  --bg-light: #FFFFFF;
+  --bg-cream: #FFF9F5;
 }
 
 html, body, #root { height: 100%; }
 
 body {
   margin: 0;
-  background: #EEF1EC;
+  background: #FFFFFF;
   color: #17161D;
   font-family: 'Inter', 'SF Pro Display', 'Manrope', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -85,22 +92,28 @@ html { scroll-behavior: smooth; scroll-padding-top: 84px; }
   }
 
   /* ── Pastel cards ── */
-  .card-pastel-mint    { @apply rounded-xl2; background: linear-gradient(145deg,#D8F5E6 0%,#BDE8CC 100%); border:1px solid rgba(63,174,90,0.15); box-shadow:var(--shadow-soft); }
-  .card-pastel-peach   { @apply rounded-xl2; background: linear-gradient(145deg,#FDE8D8 0%,#F5D8C5 100%); border:1px solid rgba(244,185,66,0.15); box-shadow:var(--shadow-soft); }
+  .card-pastel-mint    { @apply rounded-xl2; background: linear-gradient(145deg,#FFE8D8 0%,#FFD8CC 100%); border:1px solid rgba(255,138,0,0.15); box-shadow:var(--shadow-soft); }
+  .card-pastel-peach   { @apply rounded-xl2; background: linear-gradient(145deg,#FFF3E0 0%,#FFE0B2 100%); border:1px solid rgba(255,152,0,0.15); box-shadow:var(--shadow-soft); }
   .card-pastel-blue    { @apply rounded-xl2; background: linear-gradient(145deg,#DAEAF8 0%,#C5DAEF 100%); border:1px solid rgba(59,130,246,0.12); box-shadow:var(--shadow-soft); }
   .card-pastel-lavender{ @apply rounded-xl2; background: linear-gradient(145deg,#E8E6F8 0%,#D8D4F0 100%); border:1px solid rgba(139,92,246,0.12); box-shadow:var(--shadow-soft); }
 
   /* ── Gradient accent card ── */
-  .card-gradient-green {
-    background: linear-gradient(135deg, #0B5D3B 0%, #0e6b44 50%, #06452C 100%);
+  .card-gradient-orange {
+    background: linear-gradient(135deg, #FF8A00 0%, #FF5722 50%, #E64A19 100%);
     color: #fff;
     @apply rounded-2xl;
-    box-shadow: 0 8px 32px rgba(11,93,59,0.35);
+    box-shadow: 0 8px 32px rgba(255,138,0,0.35);
   }
 
   /* ── Buttons ── */
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-forest text-white px-5 py-2.5 text-sm font-semibold transition-all duration-200 hover:bg-darkgreen hover:shadow-[0_4px_16px_rgba(11,93,59,0.35)] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 rounded-xl text-white px-5 py-2.5 text-sm font-semibold transition-all duration-200 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;
+    background: linear-gradient(135deg, #FF8A00 0%, #FF5722 100%);
+    box-shadow: 0 4px 16px rgba(255,138,0,0.35);
+  }
+  .btn-primary:hover {
+    background: linear-gradient(135deg, #FF5722 0%, #E64A19 100%);
+    box-shadow: 0 6px 20px rgba(255,87,34,0.45);
   }
   .btn-ghost {
     @apply inline-flex items-center justify-center gap-2 rounded-xl border border-[rgba(20,20,25,0.12)] bg-white px-5 py-2.5 text-sm font-semibold text-ink transition-all duration-200 hover:bg-bg hover:border-[rgba(20,20,25,0.2)] active:scale-[0.98];
@@ -167,7 +180,7 @@ html { scroll-behavior: smooth; scroll-padding-top: 84px; }
 
 /* Gradient text utility */
 .gradient-text {
-  background: linear-gradient(90deg,#0b5d3b,#3fae5a);
+  background: linear-gradient(90deg,#FF8A00,#FF5722);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -175,14 +188,14 @@ html { scroll-behavior: smooth; scroll-padding-top: 84px; }
 
 /* Focus ring */
 :focus-visible {
-  outline: 2px solid #3FAE5A;
+  outline: 2px solid #FF8A00;
   outline-offset: 2px;
 }
 
 /* Selection */
 ::selection {
-  background: rgba(63,174,90,0.2);
-  color: #06452C;
+  background: rgba(255,138,0,0.2);
+  color: #E64A19;
 }
 
 /* Smooth image rendering */

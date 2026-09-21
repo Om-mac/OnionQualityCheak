@@ -749,6 +749,98 @@ def get_camera_frame():
             cleanup_temp_file(tmp_path)
 
 
+@app.route('/api/detect-base64', methods=['POST'])
+def detect_base64():
+    """
+    Run defect detection on base64 encoded image (for live camera)
+    
+    Request JSON:
+        - image: String (base64 encoded image, required)
+        - pixels_per_cm: Float (optional, default 20.0)
+        - confidence_threshold: Float (optional, default 0.4)
+    
+    Response:
+        JSON with detection results
+    """
+    import base64
+    
+    # Get JSON data
+    data = request.get_json()
+    
+    if not data or 'image' not in data:
+        return jsonify({"error": "No image data provided"}), 400
+    
+    base64_image = data['image']
+    
+    # Remove data URL prefix if present
+    if ',' in base64_image:
+        base64_image = base64_image.split(',')[1]
+    
+    # Get parameters
+    pixels_per_cm = float(data.get('pixels_per_cm', 20.0))
+    confidence_threshold = float(data.get('confidence_threshold', 0.4))
+    
+    # Validate parameters
+    if not (1.0 <= pixels_per_cm <= 100.0):
+        return jsonify({"error": "pixels_per_cm must be between 1.0 and 100.0"}), 400
+    
+    if not (0.1 <= confidence_threshold <= 1.0):
+        return jsonify({"error": "confidence_threshold must be between 0.1 and 1.0"}), 400
+    
+    filepath = None
+    
+    try:
+        # Decode base64 image
+        image_data = base64.b64decode(base64_image)
+        
+        # Save to temp file
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        filename = f"upload_base64_{timestamp}.jpg"
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        
+        with open(filepath, 'wb') as f:
+            f.write(image_data)
+        
+        # Run detection
+        results = detect_defects_with_sizing(
+            filepath,
+            pixels_per_cm=pixels_per_cm,
+            confidence_threshold=confidence_threshold
+        )
+        
+        # Get image dimensions
+        _img = cv2.imread(filepath)
+        image_dimensions = {}
+        if _img is not None:
+            image_dimensions = {"width": _img.shape[1], "height": _img.shape[0]}
+        
+        # Prepare response
+        response_data = {
+            "success": True,
+            "source": "onioncheck",
+            "timestamp": datetime.now().isoformat(),
+            "total_detected": results["total_detected"],
+            "defect_summary": results["defect_summary"],
+            "severity_summary": results["severity_summary"],
+            "statistics": results["statistics"],
+            "detections": results["detections"],
+            "calibration": results["calibration"],
+            "image_dimensions": image_dimensions
+        }
+        
+        return jsonify(response_data), 200
+    
+    except ValueError as e:
+        return jsonify({"error": f"Validation error: {str(e)}"}), 400
+    
+    except Exception as e:
+        return jsonify({"error": f"Detection failed: {str(e)}"}), 500
+    
+    finally:
+        if filepath:
+            cleanup_temp_file(filepath)
+
+
 # ==========================================================================
 # MAIN
 # ==========================================================================
@@ -777,3 +869,95 @@ if __name__ == '__main__':
         port=5000,
         debug=True
     )
+
+
+@app.route('/api/detect-base64', methods=['POST'])
+def detect_base64():
+    """
+    Run defect detection on base64 encoded image (for live camera)
+    
+    Request JSON:
+        - image: String (base64 encoded image, required)
+        - pixels_per_cm: Float (optional, default 20.0)
+        - confidence_threshold: Float (optional, default 0.4)
+    
+    Response:
+        JSON with detection results
+    """
+    import base64
+    
+    # Get JSON data
+    data = request.get_json()
+    
+    if not data or 'image' not in data:
+        return jsonify({"error": "No image data provided"}), 400
+    
+    base64_image = data['image']
+    
+    # Remove data URL prefix if present
+    if ',' in base64_image:
+        base64_image = base64_image.split(',')[1]
+    
+    # Get parameters
+    pixels_per_cm = float(data.get('pixels_per_cm', 20.0))
+    confidence_threshold = float(data.get('confidence_threshold', 0.4))
+    
+    # Validate parameters
+    if not (1.0 <= pixels_per_cm <= 100.0):
+        return jsonify({"error": "pixels_per_cm must be between 1.0 and 100.0"}), 400
+    
+    if not (0.1 <= confidence_threshold <= 1.0):
+        return jsonify({"error": "confidence_threshold must be between 0.1 and 1.0"}), 400
+    
+    filepath = None
+    
+    try:
+        # Decode base64 image
+        image_data = base64.b64decode(base64_image)
+        
+        # Save to temp file
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        filename = f"upload_base64_{timestamp}.jpg"
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        
+        with open(filepath, 'wb') as f:
+            f.write(image_data)
+        
+        # Run detection
+        results = detect_defects_with_sizing(
+            filepath,
+            pixels_per_cm=pixels_per_cm,
+            confidence_threshold=confidence_threshold
+        )
+        
+        # Get image dimensions
+        _img = cv2.imread(filepath)
+        image_dimensions = {}
+        if _img is not None:
+            image_dimensions = {"width": _img.shape[1], "height": _img.shape[0]}
+        
+        # Prepare response
+        response_data = {
+            "success": True,
+            "source": "onioncheck",
+            "timestamp": datetime.now().isoformat(),
+            "total_detected": results["total_detected"],
+            "defect_summary": results["defect_summary"],
+            "severity_summary": results["severity_summary"],
+            "statistics": results["statistics"],
+            "detections": results["detections"],
+            "calibration": results["calibration"],
+            "image_dimensions": image_dimensions
+        }
+        
+        return jsonify(response_data), 200
+    
+    except ValueError as e:
+        return jsonify({"error": f"Validation error: {str(e)}"}), 400
+    
+    except Exception as e:
+        return jsonify({"error": f"Detection failed: {str(e)}"}), 500
+    
+    finally:
+        if filepath:
+            cleanup_temp_file(filepath)

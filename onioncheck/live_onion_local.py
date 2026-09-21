@@ -73,17 +73,17 @@ CLASS_NAMES = {0: "onion"}
 
 # Quality assessment colors (BGR for OpenCV)
 CLASS_COLORS = {
-    0: (0, 200, 0),      # onion - green
+    0: (255, 0, 0),      # onion - blue
 }
 
 # Mask colors (BGR)
 MASK_COLORS = {
-    0: (0, 200, 0),      # onion mask - green
+    0: (255, 0, 0),      # onion mask - blue
 }
 
 # Quality info per class
 QUALITY_INFO = {
-    0: {"label": "ONION", "color": (0, 200, 0), "status": "DETECTED", "severity": 0},
+    0: {"label": "ONION", "color": (255, 0, 0), "status": "DETECTED", "severity": 0},
 }
 
 
@@ -158,7 +158,7 @@ class LiveOnionInspector:
         self.show_stats = True
         self.show_confidence = True
         self.show_fps = True
-        self.show_masks = True
+        self.show_masks = False  # masks OFF by default so the live video isn't covered in green
 
         # FPS calculation
         self.fps_counter = 0
@@ -209,7 +209,8 @@ class LiveOnionInspector:
         return detections
 
     def draw_masks(self, frame: np.ndarray, detections: List[Dict]) -> np.ndarray:
-        """Draw segmentation masks on frame."""
+        """Draw a light mask tint + crisp contour so the video stays clearly visible.
+        Masks are OFF by default (toggle with M)."""
         if not self.show_masks:
             return frame
 
@@ -220,15 +221,17 @@ class LiveOnionInspector:
             cls_id = det["class_id"]
             color = MASK_COLORS.get(cls_id, (128, 128, 128))
             mask = det["mask"]
-            colored_mask = np.zeros_like(frame)
-            colored_mask[:] = color
             mask_bool = mask > 0.5
+            # Very light 15% fill — onion clearly visible underneath
             overlay[mask_bool] = cv2.addWeighted(
-                overlay[mask_bool], 0.4,
-                colored_mask[mask_bool], 0.6, 0
+                overlay[mask_bool], 0.85,
+                np.full_like(frame[mask_bool], color), 0.15, 0
             )
-
-        return cv2.addWeighted(overlay, 0.6, frame, 0.4, 0)
+            # Crisp outline for clear boundaries without covering the view
+            mask_u8 = (mask_bool.astype(np.uint8)) * 255
+            contours, _ = cv2.findContours(mask_u8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            cv2.drawContours(overlay, contours, -1, color, 2)
+        return overlay
 
     def draw_detection(
         self, frame: np.ndarray, det: Dict, det_id: int
