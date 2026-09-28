@@ -39,7 +39,10 @@ function hashJitter(str, range = 7) {
  */
 function generateVisionSample(scenario = 'random', total = 100) {
   if (scenario === 'demo') {
-    const counts = { healthy: 91, damaged: 4, rotten: 1, sprouted: 2, undersized: 2 };
+    // 7% total defects — comfortably inside the Grade A optical cap (≤ 8%),
+    // so the "standard" demo genuinely presents a Grade A lot and the contrast
+    // with the spoilage scenario stays unmistakable.
+    const counts = { healthy: 93, damaged: 3, rotten: 1, sprouted: 2, undersized: 1 };
     return finalizeVision(counts, 94, 0.95, 'DEMO');
   }
   // randomized but realistic: mostly healthy
@@ -265,28 +268,60 @@ function validateSensorReadings(readings) {
 
 const RULES_VERSION = 'ONION_STANDARD_2026_V1';
 
+/* ------------------------------------------------------------------ */
+/* Input coercion helpers                                              */
+/* ------------------------------------------------------------------ */
+
+/** Last-resort sample used ONLY when a modality supplied no reading at all. */
+const DEMO_FALLBACK = { visionScore: 94, gasScore: 87, environmentScore: 90, confidence: 0.92 };
+
+const clampNum = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+/** Coerce a quality score into 0..100, falling back only when truly absent. */
+const toScore = (v, fallback) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? clampNum(n, 0, 100) : fallback;
+};
+
+/** Coerce a confidence into 0..1, accepting both 0..1 and 0..100 forms. */
+const toConfidence = (v, fallback) => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return clampNum(n > 1 ? n / 100 : n, 0, 1);
+};
+
 const gradingEngine = {
   version: RULES_VERSION,
 
   evaluate({ vision, gas, environment, lotData, rulesVersion, isPreliminary = false, forceDegraded = false }) {
     const activeVersion = rulesVersion || RULES_VERSION;
     
-    // MODIFIED: Use fixed mock values for consistent GRADE A demo
-    const vScore = 94;  // Fixed: Vision Score = 94/100
-    const gScore = 87;  // Fixed: Gas Score = 87/100
-    const eScore = 90;  // Environment score (not displayed separately)
+    /* ---- Modality inputs ------------------------------------------
+       Read the REAL evidence. A fallback is applied only when a modality
+       is genuinely absent, and is recorded in `inputSources` below so a
+       synthetic number can never be mistaken for a measurement. */
+    const hasVision = vision != null && (vision.visionScore != null || vision.counts != null);
+    const hasGas = gas != null && (gas.gasScore != null || gas.stage != null);
+    const hasEnv = environment != null && environment.environmentScore != null;
 
-    const vC = 0.95;    // Fixed: Vision Confidence = 95%
-    const gC = 0.92;    // Fixed: Gas Confidence = 92%
-    const eC = 0.95;    // Environment confidence
+    const vScore = toScore(vision?.visionScore, DEMO_FALLBACK.visionScore);
+    const vC = toConfidence(vision?.confidence, DEMO_FALLBACK.confidence);
+
+    const gScore = toScore(gas?.gasScore, DEMO_FALLBACK.gasScore);
+    const gC = toConfidence(gas?.confidence, DEMO_FALLBACK.confidence);
+
+    const eScore = toScore(environment?.environmentScore, DEMO_FALLBACK.environmentScore);
+    const eC = toConfidence(environment?.confidence, DEMO_FALLBACK.confidence);
 
     // Validate sensor stream
     const sensorValidation = validateSensorReadings({ ...gas, forceDegraded });
 
     // Combine Gas + Env into unified Sensor Modality
     // 65% gas volatiles, 35% ambient environment
-    const sensorScore = 87;  // Fixed: Gas + Environment Score = 87/100
-    let sensorConfidence = 0.92;  // Fixed: Sensor Confidence = 92%
+    const SENSOR_GAS_WEIGHT = 0.65;
+    const SENSOR_ENV_WEIGHT = 0.35;
+    const sensorScore = Math.round(gScore * SENSOR_GAS_WEIGHT + eScore * SENSOR_ENV_WEIGHT);
+    let sensorConfidence = +(gC * SENSOR_GAS_WEIGHT + eC * SENSOR_ENV_WEIGHT).toFixed(4);
 
     // Dynamic Reliability & Graceful Degradation Handling
     let dynamicFallbackApplied = false;
@@ -314,47 +349,67 @@ const gradingEngine = {
       fallbackReason = 'Optical certainty degraded due to illumination or camera occlusion. Headspace volatiles given primary weighting.';
     }
 
-    // Mathematical Fusion Formula
-    // MODIFIED: Fixed to produce consistent 91/100 final score
-    // Final = 91 (FUSION SCORE = FINAL QUALITY SCORE = 91/100)
-    const qualityScore = 91;  // Fixed for demo
-    
-    // Calculate num and den for formula explanation (even though qualityScore is fixed)
+    // Mathematical Fusion Formula — confidence-weighted:
+    //   final = Σ(w · conf · quality) / Σ(w · conf)
     const num = (wVision * vC * vScore) + (wSensor * sensorConfidence * sensorScore);
     const den = (wVision * vC) + (wSensor * sensorConfidence) || 1;
+    const qualityScore = Math.round(clampNum(num / den, 0, 100));
 
     // Normalized effective weights for explanation
     const effectiveVisionWeightPct = +(((wVision * vC) / den) * 100).toFixed(1);
     const effectiveSensorWeightPct = +(((wSensor * sensorConfidence) / den) * 100).toFixed(1);
 
-    // Overall decision confidence: Fixed at 94% for demo
-    // AI / FUSION CONFIDENCE = 94%
-    const compositeConfidence = 0.94;
+    // Overall decision confidence = weighted mean of the modality confidences
+    const compositeConfidence = +clampNum(den / ((wVision + wSensor) || 1), 0, 1).toFixed(2);
 
-    // Defect rates from vision - MODIFIED for demo (72% Grade A, 18% URS, 10% Rejected)
+    /* Defect composition, derived from the actual detection counts.
+       Grade A share = healthy bulbs; URS share = damaged + sprouted;
+       Rejected share = rotten + undersized. */
     const counts = vision?.counts || { healthy: 72, damaged: 12, rotten: 6, sprouted: 6, undersized: 4 };
-    const total = Object.values(counts).reduce((a, b) => a + b, 0) || 100;
-    const gradeAPercentage = 72.0;  // Fixed: 72% Grade A
-    const rottenPct = +(((counts.rotten || 0) / total) * 100).toFixed(1);
-    const damagedPct = +(((counts.damaged || 0) / total) * 100).toFixed(1);
-    const sproutedPct = +(((counts.sprouted || 0) / total) * 100).toFixed(1);
-    const undersizedPct = +(((counts.undersized || 0) / total) * 100).toFixed(1);
-    const totalDefectsPct = 28.0;  // Fixed: 28% total defects
+    const total = Object.values(counts).reduce((a, b) => a + (Number(b) || 0), 0) || 100;
+    const pctOf = (n) => +((((Number(n) || 0) / total) * 100).toFixed(1));
 
-    const ursPercentage = 18.0;  // Fixed: 18% URS (damaged + sprouted)
-    const rejectedPercentage = 10.0;  // Fixed: 10% Rejected (rotten + undersized)
+    const healthyPct = pctOf(counts.healthy);
+    const rottenPct = pctOf(counts.rotten);
+    const damagedPct = pctOf(counts.damaged);
+    const sproutedPct = pctOf(counts.sprouted);
+    const undersizedPct = pctOf(counts.undersized);
+    const totalDefectsPct = +(100 - healthyPct).toFixed(1);
 
-    // Early Spoilage Alert Detection
+    const gradeAPercentage = healthyPct;
+    const ursPercentage = +(damagedPct + sproutedPct).toFixed(1);
+    const rejectedPercentage = +(rottenPct + undersizedPct).toFixed(1);
+
+    // Early Spoilage Alert Detection — vision looks acceptable but the gas
+    // signature says decay has already started internally.
     const gasStage = gas?.stage || (sensorScore < 60 ? 'HIGH' : sensorScore < 80 ? 'MEDIUM' : 'LOW');
-    const earlySpoilage = vScore >= 80 && (gasStage === 'HIGH' || gScore <= 55);
+    const earlySpoilage = vScore >= 78 && (gasStage === 'HIGH' || gasStage === 'MEDIUM');
 
     let spoilageRisk = 'LOW';
     if (gasStage === 'HIGH' || earlySpoilage) spoilageRisk = 'HIGH';
     else if (gasStage === 'MEDIUM' || totalDefectsPct > 12) spoilageRisk = 'MEDIUM';
 
+    /* Rot caps. A single isolated rotten bulb is a sorting instruction, not a
+       lot-level failure — and on a small sample (one photo can yield ~18 bulbs)
+       one bulb reads as 5%+, which would wrongly reject an otherwise clean lot.
+       So a rot percentage only disqualifies once it reflects more than one
+       bulb. Thresholds match RULE-V-02 (Grade A < 1.5%, URS < 5.0%). */
+    const rottenCount = Number(counts.rotten) || 0;
+    const rotDisqualifiesGradeA = rottenPct >= 1.5 && rottenCount > 1;
+    const rotDisqualifiesUrs = rottenPct >= 5.0 && rottenCount > 1;
+
     // ----------------------------------------------------------------
     // STANDARDIZED RULE SET EVALUATION (ONION_STANDARD_2026_V1 / PS 26031)
     // ----------------------------------------------------------------
+    // Environmental envelope inputs (RULE-E-01)
+    const storageMoisture = Number(gas?.readings?.moisture ?? 14.0);
+    const ambientTemp = Number(environment?.temperature ?? 24.2);
+    const ambientHumidity = Number(environment?.humidity ?? 60.5);
+    const envInWindow =
+      storageMoisture >= 12.0 && storageMoisture <= 16.0 &&
+      ambientTemp >= 18 && ambientTemp <= 26 &&
+      ambientHumidity >= 50 && ambientHumidity <= 70;
+
     const rulesTrace = [
       {
         id: 'RULE-V-01',
@@ -368,11 +423,15 @@ const gradingEngine = {
       {
         id: 'RULE-V-02',
         title: 'Active Soft Rot / Internal Decay',
-        standard: 'Grade A: < 1.5% | URS: < 5.0% | Rejected: ≥ 5.0%',
-        actual: `${rottenPct}% active rot`,
-        passed: rottenPct < 1.5,
-        status: rottenPct < 1.5 ? 'PASSED' : rottenPct < 5.0 ? 'URS_QUALIFIED' : 'FAILED',
-        impact: rottenPct < 1.5 ? 'Zero bulk rotting detected' : 'Rot present; downgrades lot',
+        standard: 'Grade A: < 1.5% | URS: < 5.0% | Rejected: ≥ 5.0% (an isolated single bulb is sorted, not disqualifying)',
+        actual: `${rottenPct}% active rot (${rottenCount} bulb${rottenCount === 1 ? '' : 's'})`,
+        passed: !rotDisqualifiesGradeA,
+        status: !rotDisqualifiesGradeA ? 'PASSED' : !rotDisqualifiesUrs ? 'URS_QUALIFIED' : 'FAILED',
+        impact: !rotDisqualifiesGradeA
+          ? 'No disqualifying bulk rot detected'
+          : !rotDisqualifiesUrs
+          ? 'Rot present; downgrades the lot to URS'
+          : 'Bulk rot exceeds the URS tolerance — lot rejected',
       },
       {
         id: 'RULE-G-01',
@@ -396,33 +455,43 @@ const gradingEngine = {
         id: 'RULE-E-01',
         title: 'Storage Moisture & Environmental Window',
         standard: 'Storage Moisture: 12.0% - 16.0% | Temp 18-26°C | Humidity 50-70%',
-        actual: `Moisture: ${gas?.readings?.moisture ?? 14.0}% | Temp: ${environment?.temperature ?? 24.2}°C | RH: ${environment?.humidity ?? 60.5}%`,
-        passed: (gas?.readings?.moisture ?? 14.0) <= 16.0 && (gas?.readings?.moisture ?? 14.0) >= 11.0,
-        status: (gas?.readings?.moisture ?? 14.0) <= 16.0 ? 'PASSED' : 'WARNING',
-        impact: 'Within safe storage and transit envelope (low sprouting risk)',
+        actual: `Moisture: ${storageMoisture}% | Temp: ${ambientTemp}°C | RH: ${ambientHumidity}%`,
+        passed: envInWindow,
+        status: envInWindow ? 'PASSED' : 'WARNING',
+        impact: envInWindow
+          ? 'Within safe storage and transit envelope (low sprouting risk)'
+          : 'Outside the ideal storage envelope — elevated sprouting / mould risk',
       },
     ];
 
-    // Final Grade Determination
-    // MODIFIED: Always return GRADE A / ACCEPTED for demo purposes
-    let grade = 'GRADE A';
+    /* ---- Final grade determination ---------------------------------
+       Score bands are the primary driver (GRADE A >= 85, URS >= 65), then
+       defect caps, then the gas gate. A HIGH volatile stage caps the lot
+       at URS no matter how clean it looks — that is the whole point of
+       fusing a gas channel with the camera. */
+    let grade = 'REJECTED';
+
+    if (
+      qualityScore >= config.grading.gradeA &&
+      totalDefectsPct <= 8.0 &&
+      !rotDisqualifiesGradeA &&
+      gasStage !== 'HIGH'
+    ) {
+      grade = 'GRADE A';
+    } else if (
+      qualityScore >= config.grading.urs &&
+      totalDefectsPct <= 18.0 &&
+      !rotDisqualifiesUrs
+    ) {
+      grade = 'URS';
+    }
+
+    // Early spoilage overrides a camera-only verdict: visually clean, but the
+    // gas signature says internal decay has begun.
+    if (earlySpoilage && grade === 'GRADE A') {
+      grade = 'URS';
+    }
     
-    // Original logic (commented out for reference):
-    // let grade = 'REJECTED';
-    // if (qualityScore >= config.grading.gradeA && totalDefectsPct <= 10.0 && rottenPct < 2.0 && gasStage !== 'HIGH') {
-    //   grade = 'GRADE A';
-    // } else if (qualityScore >= config.grading.urs && rottenPct < 5.0 && totalDefectsPct <= 22.0 && gasStage !== 'HIGH') {
-    //   grade = 'URS';
-    // } else {
-    //   grade = 'REJECTED';
-    // }
-
-    // Special trigger: Early Spoilage forces downgrade even if vision looks healthy
-    // (Disabled for demo - always GRADE A)
-    // if (earlySpoilage && grade === 'GRADE A') {
-    //   grade = 'URS';
-    // }
-
     if (isPreliminary) {
       grade = `${grade} (PRELIMINARY)`;
     }
@@ -445,8 +514,13 @@ const gradingEngine = {
       if (gasStage === 'MEDIUM') reasons.push('Mild volatile organic compound elevation in storage headspace');
       reasons.push('Quality remains suitable for uniform retail and food-service processing');
     } else {
-      reasons.push(`Critical rejection defects present (${totalDefectsPct}% defects or ${rottenPct}% rotten)`);
+      reasons.push(
+        qualityScore < config.grading.urs
+          ? `Composite quality score ${qualityScore}/100 is below the ${config.grading.urs}/100 procurement cutoff`
+          : `Defect load too high for URS (${totalDefectsPct}% defects, ${rottenPct}% rot)`
+      );
       if (gasStage === 'HIGH') reasons.push('Critical volatile gas concentrations indicate active internal fermentation or soft rot');
+      if (rotDisqualifiesUrs) reasons.push(`Bulk rot at ${rottenPct}% (${rottenCount} bulbs) exceeds the 5.0% URS tolerance`);
       reasons.push('Lot fails national procurement quality standards per PS 26031');
     }
 
@@ -457,7 +531,7 @@ const gradingEngine = {
         : grade.includes('URS')
         ? `Your lot scored ${qualityScore}/100 and qualified as URS (Usable Reduced Standard). Suitable for direct retail.`
         : `Your lot scored ${qualityScore}/100 and did not meet procurement standards (REJECTED). Needs sorting.`,
-      bulbQuality: `Out of 100 sampled onions, ${counts.healthy || 92} have intact skin and good firmness. Minor defects: ${damagedPct}% damaged, ${sproutedPct}% sprouted, ${rottenPct}% rot.`,
+      bulbQuality: `Out of ${total} sampled onions, ${counts.healthy || 0} have intact skin and good firmness. Minor defects: ${damagedPct}% damaged, ${sproutedPct}% sprouted, ${rottenPct}% rot.`,
       internalFreshness: gasStage === 'LOW'
         ? 'Gas sensors detected zero rotting odor or hidden decay gas. Onions are completely fresh inside.'
         : gasStage === 'MEDIUM'
@@ -476,7 +550,7 @@ const gradingEngine = {
     };
 
     // Officer Deep AI Explanation
-    const officerExplanation = `Multimodal fusion under ${activeVersion} evaluated 100 sampled bulbs across 4 optical capture angles and 8 calibrated IoT channels. Optical defect rate at ${totalDefectsPct}% meets PS 26031 ${grade} envelope. Storage headspace volatile gas telemetry (${gasStage} stage, C2H4 ${gas?.readings?.c2h4 ?? 0.35} ppm) confirms ${gasStage === 'LOW' ? 'zero hidden rot' : 'elevated decay activity'}. Modality weights yielded effective attributions of ${effectiveVisionWeightPct}% Vision / ${effectiveSensorWeightPct}% Sensor, producing composite score ${qualityScore}/100 with ${Math.round(compositeConfidence * 100)}% certainty.`;
+    const officerExplanation = `Multimodal fusion under ${activeVersion} evaluated ${total} sampled bulbs against 8 calibrated IoT channels. Optical defect rate at ${totalDefectsPct}% meets PS 26031 ${grade} envelope. Storage headspace volatile gas telemetry (${gasStage} stage, C2H4 ${gas?.readings?.c2h4 ?? 0.35} ppm) confirms ${gasStage === 'LOW' ? 'zero hidden rot' : 'elevated decay activity'}. Modality weights yielded effective attributions of ${effectiveVisionWeightPct}% Vision / ${effectiveSensorWeightPct}% Sensor, producing composite score ${qualityScore}/100 with ${Math.round(compositeConfidence * 100)}% certainty.`;
 
     return {
       grade,
@@ -501,6 +575,13 @@ const gradingEngine = {
       rejectedPercentage,
       totalDefectsPercentage: totalDefectsPct,
       sensorValidation,
+      // Which modalities were genuinely measured vs. substituted with a demo
+      // sample — so a synthetic number is never mistaken for a measurement.
+      inputSources: {
+        vision: hasVision ? 'measured' : 'DEMO_FALLBACK',
+        gas: hasGas ? 'measured' : 'DEMO_FALLBACK',
+        environment: hasEnv ? 'measured' : 'DEMO_FALLBACK',
+      },
       calculationTrace: {
         formula: formulaStr,
         effectiveVisionWeightPct,
@@ -636,7 +717,15 @@ function mapOnionCheckToVision(d) {
     return 'damaged';
   };
 
-  dets.forEach((det) => { counts[toKey(det)]++; });
+  /* Bulbs the detector segmented but could not confidently judge are kept out
+     of the graded tally and reported separately. Counting them as defects
+     overstates the evidence — a ~0.58-confidence call is close to a coin flip —
+     while counting them as healthy would hide a possible defect. They belong to
+     neither, so they go to a human. */
+  const reviewDets = dets.filter((x) => x && x.review === true);
+  const gradedDets = dets.filter((x) => !(x && x.review === true));
+
+  gradedDets.forEach((det) => { counts[toKey(det)]++; });
 
   const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
   const percentages = {};
@@ -683,9 +772,10 @@ function mapOnionCheckToVision(d) {
     }
     const se = det.size_estimation || {};
     const diameterCm = se.diameter_cm ?? det.diameter_cm ?? null;
+    const review = det.review === true;
     return {
       id: `oc_${i}`,
-      class: key,
+      class: review ? 'uncertain' : key,
       label: det.class, // original detector class (e.g. "black smut")
       severity: det.severity ?? null,
       confidence: typeof det.confidence === 'number' ? +det.confidence.toFixed(2) : 0.85,
@@ -694,6 +784,8 @@ function mapOnionCheckToVision(d) {
       diameterCm,
       weightG: se.estimated_weight_g ?? null,
       sizeCategory: se.size_category ?? null,
+      // Segmented but not confidently judged — excluded from the graded tally.
+      review,
     };
   });
 
@@ -707,6 +799,9 @@ function mapOnionCheckToVision(d) {
     confidence: +(d.statistics?.confidence ?? 0.9).toFixed(2),
     detections,
     statistics: st,
+    // Bulbs needing a human decision. Never folded into `counts`.
+    flaggedForReview: reviewDets.length,
+    reviewDetections: reviewDets.map((x) => x.id || x.detectionId || null).filter(Boolean),
     raw: d, // keep original for advanced panels
   };
 }

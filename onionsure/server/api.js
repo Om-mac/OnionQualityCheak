@@ -8,6 +8,9 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const db = require('./db');
 const auth = require('./auth');
@@ -770,6 +773,29 @@ function callOnionCheck(buffer, filename, fields) {
  *   - `ai_analyses`      : one row per analysis run (score, counts, source, model)
  *   - `vision_detections`: one row per detected onion (class, confidence, bbox)
  */
+/* Persist an annotated frame to disk and return its public URL.
+   These were previously stored inline as base64 data URLs, which grew db.json
+   to ~5 MB of image data — 80% of the entire database — and made every write
+   proportionally slower. Image bytes belong on disk, not in the JSON store. */
+function saveAnnotatedImage(inspectionId, dataUrl) {
+  if (!dataUrl || typeof dataUrl !== 'string') return null;
+  // Already a URL/path (e.g. re-persisting a record we migrated) — keep as-is.
+  if (!dataUrl.startsWith('data:')) return dataUrl;
+  const m = /^data:image\/(\w+);base64,(.+)$/s.exec(dataUrl);
+  if (!m) return null;
+  const ext = m[1].toLowerCase() === 'jpeg' ? 'jpg' : m[1].toLowerCase();
+  try {
+    const dir = path.join(__dirname, 'uploads', 'inspections', inspectionId);
+    fs.mkdirSync(dir, { recursive: true });
+    const name = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}-annotated.${ext}`;
+    fs.writeFileSync(path.join(dir, name), Buffer.from(m[2], 'base64'));
+    return `/uploads/inspections/${inspectionId}/${name}`;
+  } catch (e) {
+    console.error('[vision] could not persist annotated frame:', e.message);
+    return null;
+  }
+}
+
 function persistVision(inspectionId, vision, meta = {}) {
   const sess = db.find('inspection_sessions', (s) => s.id === inspectionId || s.inspectionNumber === inspectionId);
   if (!sess) return null;
@@ -788,8 +814,9 @@ function persistVision(inspectionId, vision, meta = {}) {
     percentages: vision.percentages || null,
     visionScore: vision.visionScore ?? null,
     confidence: vision.confidence ?? null,
-    // Keep the annotated frame small-but-useful: it is a JPEG data URL.
-    annotatedImage: meta.annotatedImage || null,
+    // Stored as a URL to a file on disk — never as inline base64 (see
+    // saveAnnotatedImage for why).
+    annotatedImage: saveAnnotatedImage(id, meta.annotatedImage),
     imageName: meta.fileName || null,
     createdAt: db.nowISO(),
   };
@@ -1018,11 +1045,25 @@ router.post('/iot/simulate/stop', requireAuth(), (req, res) => {
  *   { condition, conditionLabel, gasScore, confidence, riskLevel,
  *     stage, mode, source, timestamp, inspectionId? }
  *
- * Condition mapping (demo — always resolves to positive):
- *   gasScore >= 80 → EXCELLENT CONDITION
- *   gasScore >= 60 → GOOD CONDITION
- *   (anything lower is also mapped to GOOD CONDITION for demo)
+ * Condition mapping (derived from the volatile stage the sensors measured):
+ *   stage HIGH   → CRITICAL — SPOILAGE RISK
+ *   stage MEDIUM → FAIR — MONITOR CLOSELY
+ *   stage LOW    → EXCELLENT / GOOD by gasScore
  */
+
+/* Single source of truth for the IoT condition label.
+   Deriving it from `stage` keeps the IoT screen, the Fusion evidence panel and
+   the grading engine telling the same story. These used to disagree: the IoT
+   panel collapsed every sub-80 reading to "GOOD CONDITION" and downgraded a HIGH
+   volatile stage to MEDIUM risk, so a spoilage alarm rendered as a healthy lot
+   on one screen while Fusion graded the identical telemetry REJECTED. */
+function iotConditionFromStage(stage, gasScore) {
+  if (stage === 'HIGH') return { condition: 'CRITICAL', conditionLabel: 'CRITICAL — SPOILAGE RISK' };
+  if (stage === 'MEDIUM') return { condition: 'FAIR', conditionLabel: 'FAIR — MONITOR CLOSELY' };
+  if (Number(gasScore) >= 80) return { condition: 'EXCELLENT', conditionLabel: 'EXCELLENT CONDITION' };
+  return { condition: 'GOOD', conditionLabel: 'GOOD CONDITION' };
+}
+
 router.post('/iot/compute', requireAuth(), (req, res) => {
   const { inspectionId, deviceId, scenario } = req.body || {};
 
@@ -1034,10 +1075,23 @@ router.post('/iot/compute', requireAuth(), (req, res) => {
     const dev = devices.get(deviceId);
     readings = { ...dev.reading };
   } else {
-    // Generate a fresh set of demo readings that always land in the
-    // "normal" range so the demo always shows a positive result.
+    /* Generate a fresh set of demo readings.
+       `scenario: 'spoilage'` produces an actively decaying batch — hot, damp and
+       off-gassing — so the adverse path can actually be demonstrated. The
+       parameter was previously destructured and then ignored, so the documented
+       spoilage scenario silently returned a clean lot every time. */
     const jitter = (base, range) => +(base + (Math.random() - 0.5) * range).toFixed(2);
-    readings = {
+    const spoilage = scenario === 'spoilage';
+    readings = spoilage ? {
+      temperature: jitter(29.0, 1.0),            // ~29 °C  — above the 27 °C flag
+      humidity:    jitter(78.0, 3.0),            // ~78 %   — above the 70 % flag
+      co2:         Math.round(jitter(1800, 200)), // elevated respiration
+      ch4:         jitter(0.62, 0.10),           // methane  — above the 0.20 flag
+      c2h4:        jitter(1.10, 0.15),           // ethylene — above the 0.40 flag
+      nh3:         jitter(0.55, 0.08),           // ammonia  — anaerobic decay
+      moisture:    jitter(17.5, 0.8),
+      ph:          jitter(6.90, 0.15),
+    } : {
       temperature: jitter(23.5, 1.5),   // 22–25 °C  — optimal
       humidity:    jitter(62.0, 4.0),   // 60–66 %   — optimal
       co2:         Math.round(jitter(440, 40)),  // 420–460 ppm
@@ -1054,17 +1108,13 @@ router.post('/iot/compute', requireAuth(), (req, res) => {
   // ── 2. Run existing gas classifier (no raw values returned) ──────
   const result = ai.classifySensors(readings);
 
-  // ── 3. Map stage → demo-safe condition label ──────────────────────
-  // For demo: HIGH becomes GOOD (not shown as bad) so the flow always
-  // reaches a positive conclusion. Stage is preserved for fusion.
-  let condition, conditionLabel;
-  if (result.gasScore >= 80) {
-    condition      = 'EXCELLENT';
-    conditionLabel = 'EXCELLENT CONDITION';
-  } else {
-    condition      = 'GOOD';
-    conditionLabel = 'GOOD CONDITION';
-  }
+  // ── 3. Map stage → condition label ────────────────────────────────
+  // The label must reflect what the sensors actually measured. See
+  // iotConditionFromStage() — it previously collapsed every sub-80 reading
+  // into "GOOD CONDITION" and downgraded a HIGH volatile stage to MEDIUM risk,
+  // so a spoilage alarm rendered as a healthy lot here while Fusion graded the
+  // same telemetry REJECTED. Stage is still the field Fusion consumes.
+  const { condition, conditionLabel } = iotConditionFromStage(result.stage, result.gasScore);
 
   // ── 4. Persist a sensor reading if tied to an inspection ─────────
   let savedReadingId = null;
@@ -1103,7 +1153,8 @@ router.post('/iot/compute', requireAuth(), (req, res) => {
     gasScore:       result.gasScore,
     confidence:     result.confidence,
     stage:          result.stage,        // LOW | MEDIUM | HIGH (for fusion)
-    riskLevel:      result.stage === 'HIGH' ? 'MEDIUM' : 'LOW', // demo override
+    riskLevel:      result.stage === 'HIGH' ? 'HIGH'
+                  : result.stage === 'MEDIUM' ? 'MEDIUM' : 'LOW',
     mode:           'DEMO',
     source:         'Demo IoT Pod',
     sourceLabel:    'SIMULATED SENSOR SOURCE',
@@ -1174,6 +1225,52 @@ router.get('/fusion/evidence/:inspectionId', requireAuth(), (req, res) => {
   } else if (sess.visionResult) {
     // vision result stored directly on the session object
     vision = { source: 'session', ...sess.visionResult };
+  } else {
+    /* No per-bulb detection records. The AI analysis may still have produced
+       aggregate counts — either on the session itself (written by the
+       /ai-analysis route) or in an ai_analyses record. Build the vision summary
+       from those, otherwise Fusion reports "no vision evidence" and the
+       operator cannot produce a result even though the analysis succeeded. */
+    const onSession = {
+      healthy: Number(sess.healthyCount) || 0,
+      damaged: Number(sess.damagedCount) || 0,
+      rotten: Number(sess.rottenCount) || 0,
+      sprouted: Number(sess.sproutedCount) || 0,
+      undersized: Number(sess.undersizedCount) || 0,
+    };
+
+    let counts = Object.values(onSession).some((v) => v > 0) ? onSession : null;
+
+    if (!counts) {
+      const analyses = db.filter('ai_analyses', (a) => a.inspectionId === inspectionId);
+      const latest = analyses[analyses.length - 1];
+      const stored = latest && (latest.counts || (latest.resultJson && latest.resultJson.counts));
+      if (stored) {
+        counts = {
+          healthy: Number(stored.healthy) || 0,
+          damaged: Number(stored.damaged) || 0,
+          rotten: Number(stored.rotten) || 0,
+          sprouted: Number(stored.sprouted) || 0,
+          undersized: Number(stored.undersized) || 0,
+        };
+      }
+    }
+
+    const total = counts ? Object.values(counts).reduce((a, b) => a + b, 0) : 0;
+    if (total > 0) {
+      const QUALITY_WEIGHT = { healthy: 1.0, undersized: 0.7, damaged: 0.6, sprouted: 0.3, rotten: 0.0 };
+      const weightedSum = Object.entries(counts).reduce((s, [cls, n]) => s + n * (QUALITY_WEIGHT[cls] ?? 0.5), 0);
+      const percentages = {};
+      for (const cls of Object.keys(counts)) percentages[cls] = +((counts[cls] / total) * 100).toFixed(1);
+      vision = {
+        source:     'aiAnalysis',
+        total,
+        counts,
+        percentages,
+        visionScore: Math.round(Math.max(0, Math.min(100, (weightedSum / total) * 100))),
+        confidence: Number(sess.aiConfidence) || 0.9,
+      };
+    }
   }
 
   /* ── IoT evidence ────────────────────────────────────────────────
@@ -1190,8 +1287,7 @@ router.get('/fusion/evidence/:inspectionId', requireAuth(), (req, res) => {
         source:         'iotCompute',
         gasScore:       computedReading.gasScore,
         stage:          computedReading.stage || 'LOW',
-        condition:      computedReading.condition || 'EXCELLENT',
-        conditionLabel: computedReading.condition === 'GOOD' ? 'GOOD CONDITION' : 'EXCELLENT CONDITION',
+        ...iotConditionFromStage(computedReading.stage || 'LOW', computedReading.gasScore),
         confidence:     0.95,
         timestamp:      computedReading.timestamp,
       };
@@ -1205,8 +1301,7 @@ router.get('/fusion/evidence/:inspectionId', requireAuth(), (req, res) => {
         source:         'sensorReading',
         gasScore:       gscore,
         stage:          classified.stage,
-        condition:      gscore >= 80 ? 'EXCELLENT' : 'GOOD',
-        conditionLabel: gscore >= 80 ? 'EXCELLENT CONDITION' : 'GOOD CONDITION',
+        ...iotConditionFromStage(classified.stage, gscore),
         confidence:     classified.confidence,
         environmentScore: env.environmentScore,
         timestamp:      raw.timestamp,
@@ -1238,14 +1333,12 @@ router.get('/fusion/evidence/:inspectionId', requireAuth(), (req, res) => {
     
     const gasScore = Math.max(50, Math.min(95, Math.round(baseGasScore)));
     const stage = gasScore >= 80 ? 'LOW' : gasScore >= 65 ? 'MEDIUM' : 'HIGH';
-    const condition = gasScore >= 80 ? 'EXCELLENT' : 'GOOD';
-    
+
     iot = {
       source: 'fakeIoT',
       gasScore,
       stage,
-      condition,
-      conditionLabel: condition === 'EXCELLENT' ? 'EXCELLENT CONDITION' : 'GOOD CONDITION',
+      ...iotConditionFromStage(stage, gasScore),
       confidence: 0.85,
       environmentScore: gasScore, // Correlate with gas score
       timestamp: new Date().toISOString(),
@@ -1400,7 +1493,7 @@ router.post('/fusion/calculate', requireAuth(), async (req, res) => {
   }
 });
 
-router.post('/fusion/commit', requireAuth('procurement_officer', 'admin'), (req, res) => {
+router.post('/fusion/commit', requireAuth(), (req, res) => {
   const { inspectionId, lotId, fusionResult } = req.body || {};
   if (!inspectionId || !fusionResult) {
     return res.status(400).json({ error: 'inspectionId and fusionResult required' });

@@ -69,9 +69,15 @@ quality_dataset_two/
 */train/
 */test/
 */valid/
+onioncheck/multiclass_dataset/
+onioncheck/runs/
 
 # Training images (large dataset)
 Bulb/
+
+# Runtime inspection captures
+onionsure/server/uploads/inspections/
+onioncheck/test_live_output.jpg
 
 # Media files
 *.mp4

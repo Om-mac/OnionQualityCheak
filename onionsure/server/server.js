@@ -38,6 +38,21 @@ app.use('/api/inspections', inspectionRoutes);
 const crudRoutes = require('./crud-routes');
 app.use('/api', crudRoutes);
 
+// Flat fusion endpoints called by Fusion.tsx
+// GET  /api/fusion/evidence/:inspectionId
+// GET  /api/fusion/context
+// POST /api/fusion/calculate
+// POST /api/fusion/commit
+const flatFusionRoutes = require('./flat-fusion-routes');
+app.use('/api/fusion', flatFusionRoutes);
+
+// Flat certificate endpoints called by the UI
+// POST /api/certificates/generate
+// GET  /api/certificates
+// GET  /api/certificates/:id
+const flatCertRoutes = require('./flat-cert-routes');
+app.use('/api/certificates', flatCertRoutes);
+
 /* Unknown /api/* paths must return a JSON 404 — NOT the SPA's index.html.
    Without this, the catch-all SPA fallback below answers every unmatched API
    route with HTML and a 200, so the client tries to parse "<!doctype html>"

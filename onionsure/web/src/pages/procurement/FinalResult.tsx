@@ -4,6 +4,7 @@ import { useInspection } from '../../context/InspectionContext';
 import { WorkflowHeader } from '../../components/procurement/WorkflowHeader';
 import { PageHeader, StatGrid, StatTile } from '../../components/PageHeader';
 import { Card, Badge, ProgressBar, Button } from '../../components/ui';
+import { gradeLabel } from '../../lib/grades';
 import { Award, CheckCircle2, AlertTriangle, FileCheck, ArrowRight, ShieldCheck, Sparkles, Activity } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -68,7 +69,7 @@ export default function FinalResult() {
       <PageHeader
         icon={<Award size={24} />}
         eyebrow="Stage 06: Quality Assessment Result"
-        title={`Final Assessment — ${fusion.grade}`}
+        title={`Final Assessment — ${gradeLabel(fusion.grade)}`}
         subtitle={`Central Inspection Record ${activeInspection.inspectionNumber || activeInspection.id}`}
         actions={
           <Button
@@ -100,7 +101,7 @@ export default function FinalResult() {
             <div className="text-right">
               <div className="text-xs uppercase font-bold text-emerald-200 tracking-wider">Final Assigned Grade</div>
               <div className="mt-2 inline-block rounded-2xl bg-white px-6 py-3 text-3xl font-black text-forest shadow-xl">
-                {fusion.grade}
+                {gradeLabel(fusion.grade)}
               </div>
               <div className="mt-2 text-xs font-semibold text-fresh flex items-center justify-end gap-1">
                 <ShieldCheck size={14} /> Spoilage Risk: {fusion.riskLevel}

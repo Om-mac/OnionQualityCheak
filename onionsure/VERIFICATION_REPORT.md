@@ -123,7 +123,7 @@ Verified by the cross-center test:
 | `web/src/lib/auth.tsx` | `register` callback stores the returned JWT (auto-login) | After signup the farmer lands logged-in on their dashboard |
 | `web/src/pages/Login.tsx` | Added full signup form (Full Name, Mobile, Village, FPO, Username, Password) + mode toggle | Spec login page had no farmer self-registration UI |
 | `web/src/pages/farmer/Dashboard.tsx` | Added lot-creation flow, "NO ACTIVE LOT" empty state, success banner showing the **Central Lot ID**, and "AWAITING INSPECTION" state | Farmer dashboard had no lot-submission path; spec requires it |
-| `web/index.html` | Added an inline SVG favicon (FarmLink leaf) so the browser doesn't 404 on `/favicon.ico` | Eliminate spurious browser-side 404 surfaced by the headless audit |
+| `web/index.html` | Added an inline SVG favicon (onionsure leaf) so the browser doesn't 404 on `/favicon.ico` | Eliminate spurious browser-side 404 surfaced by the headless audit |
 | `server/seed.js` | Aligned seed to spec (3 farmers, 3 officers, 10 lots) | Spec explicitly lists required seed counts |
 
 **Bug fixed during verification:** a stray `]` (`gradeCounts.REJECTED]`) in `Dashboard.tsx` that broke compilation, and a temporal-dead-zone error (`d` used before declaration) in `farmer-signup` — both caught and fixed.

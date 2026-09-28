@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { Spinner } from '../components/ui';
+import { gradeLabel } from '../lib/grades';
 import { getMockReportDetail } from './farmer/mockFarmerData';
 
 export default function CertificateView() {
@@ -430,7 +431,7 @@ export default function CertificateView() {
 
                 <div className="text-center px-1">
                   <div className="text-2xl sm:text-3xl font-black tracking-wide text-white drop-shadow">
-                    {grade}
+                    {gradeLabel(grade)}
                   </div>
                   <div className="text-xl sm:text-2xl font-black text-emerald-300 mt-0.5">
                     {qualityScore} <span className="text-sm font-semibold text-emerald-400/80">/ 100</span>

@@ -1,6 +1,19 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
 
+/**
+ * GET /api/inspection/:id returns the session **flat** — its fields sit at the
+ * top level, alongside `lot`, `images`, `sensors`, `aiAnalyses`, `fusion`, …
+ * Some callers (and older backend versions) wrap it as `{ inspection: {...} }`.
+ *
+ * Reading `res.inspection.status` against the flat shape threw
+ * "Cannot read properties of undefined", which aborted saveAiAnalysis *after*
+ * the backend call had already succeeded — so the operator saw a saved-looking
+ * screen with a permanently disabled "Continue to Fusion Intelligence" button.
+ * Accept either shape so a response-shape change can never strand the workflow.
+ */
+const unwrapInspection = (res: any): any => res?.inspection ?? res ?? {};
+
 export type WorkflowStatus =
   | 'DRAFT'
   | 'LOT_CREATED'
@@ -277,7 +290,7 @@ export const InspectionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       
       const updated: InspectionRecord = {
         ...activeInspection,
-        ...refreshed.inspection,
+        ...unwrapInspection(refreshed),
         status: 'SENSOR_COMPLETED',
         sensorData: {
           ...(activeInspection.sensorData || {}),
@@ -308,13 +321,15 @@ export const InspectionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       // Fetch updated inspection
       const refreshed = await api.getInspection(activeInspection.id);
       
-      const existingImages = refreshed.inspection.images || activeInspection.cameraData?.images || [];
+      const fresh = unwrapInspection(refreshed);
+
+      const existingImages = fresh.images || activeInspection.cameraData?.images || [];
       const newImages = cameraPayload.images || (cameraPayload.imageUrl ? [cameraPayload] : []);
       const mergedImages = [...existingImages, ...newImages];
 
       const updated: InspectionRecord = {
         ...activeInspection,
-        ...refreshed.inspection,
+        ...fresh,
         status: 'CAMERA_COMPLETED',
         cameraData: {
           images: mergedImages,
@@ -363,26 +378,35 @@ export const InspectionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         detections: aiPayload.detections || []
       };
       
-      // Post AI analysis result to backend
-      await api.runAIAnalysis(activeInspection.id, aiData);
+      /* Persist the analysis server-side so Fusion can see the evidence.
+         If the backend declines (e.g. a registered image file is missing), do
+         NOT abort: the counts are already known client-side, and throwing here
+         is what left the operator stranded with a disabled Continue button. */
+      try {
+        await api.runAIAnalysis(activeInspection.id, aiData);
+      } catch (persistErr: any) {
+        console.warn('AI analysis could not be persisted server-side:', persistErr?.message);
+      }
       
       // Fetch the updated inspection with AI counts
       const refreshed = await api.getInspection(activeInspection.id);
+      const fresh = unwrapInspection(refreshed);
 
       const updated: InspectionRecord = {
         ...activeInspection,
-        ...refreshed.inspection,
-        status: refreshed.inspection.status || 'AI_ANALYSIS_COMPLETED',
+        ...fresh,
+        status: fresh.status || 'AI_ANALYSIS_COMPLETED',
         aiAnalysis: {
-          totalDetected: refreshed.inspection.healthyCount + refreshed.inspection.damagedCount + 
-                        refreshed.inspection.rottenCount + refreshed.inspection.sproutedCount + 
-                        refreshed.inspection.undersizedCount,
-          healthyCount: refreshed.inspection.healthyCount || 0,
-          damagedCount: refreshed.inspection.damagedCount || 0,
-          rottenCount: refreshed.inspection.rottenCount || 0,
-          sproutedCount: refreshed.inspection.sproutedCount || 0,
-          undersizedCount: refreshed.inspection.undersizedCount || 0,
-          averageConfidence: refreshed.inspection.aiConfidence || aiPayload.confidence || 92,
+          totalDetected:
+            (Number(fresh.healthyCount) || 0) + (Number(fresh.damagedCount) || 0) +
+            (Number(fresh.rottenCount) || 0) + (Number(fresh.sproutedCount) || 0) +
+            (Number(fresh.undersizedCount) || 0),
+          healthyCount: Number(fresh.healthyCount) || 0,
+          damagedCount: Number(fresh.damagedCount) || 0,
+          rottenCount: Number(fresh.rottenCount) || 0,
+          sproutedCount: Number(fresh.sproutedCount) || 0,
+          undersizedCount: Number(fresh.undersizedCount) || 0,
+          averageConfidence: fresh.aiConfidence ?? aiPayload.averageConfidence ?? 0,
           modelName: aiPayload.modelName || 'OnionSure YOLOv8 Defect Detection',
           modelVersion: aiPayload.modelVersion || 'v2.4',
           detections: aiPayload.detections || [],
@@ -411,23 +435,28 @@ export const InspectionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       
       // Fetch updated inspection with fusion result
       const refreshed = await api.getInspection(activeInspection.id);
+      const fresh = unwrapInspection(refreshed);
 
       const updated: InspectionRecord = {
         ...activeInspection,
-        ...refreshed.inspection,
+        ...fresh,
         status: 'FUSION_COMPLETED',
+        /* Read the backend's own verdict. `|| 'GRADE A'` used to invent a pass
+           whenever the engine returned nothing, so the screen could show a
+           grade the pipeline never produced. A missing grade now stays
+           PENDING instead of silently becoming a pass. */
         fusionResult: {
-          visualScore: fusionPayload.visualScore || refreshed.inspection.visualScore || 85,
-          sensorScore: fusionPayload.sensorScore || refreshed.inspection.sensorScore || 88,
-          aiConfidence: fusionPayload.aiConfidence || refreshed.inspection.aiConfidence || 94,
-          finalQualityScore: fusionPayload.finalQualityScore || fusionPayload.qualityScore || refreshed.inspection.qualityScore || 86,
-          grade: fusionPayload.grade || refreshed.inspection.grade || 'GRADE A',
-          riskLevel: fusionPayload.riskLevel || refreshed.inspection.riskLevel || 'LOW',
+          visualScore: fusionPayload.visualScore ?? fresh.visualScore ?? 0,
+          sensorScore: fusionPayload.sensorScore ?? fresh.sensorScore ?? 0,
+          aiConfidence: fusionPayload.aiConfidence ?? fresh.aiConfidence ?? 0,
+          finalQualityScore: fusionPayload.finalQualityScore ?? fusionPayload.qualityScore ?? fresh.qualityScore ?? 0,
+          grade: fusionPayload.grade ?? fresh.grade ?? 'PENDING',
+          riskLevel: fusionPayload.riskLevel ?? fresh.riskLevel ?? 'PENDING',
           gradingFactors: fusionPayload.gradingFactors || [],
           calculatedAt: new Date().toISOString(),
         },
-        finalGrade: fusionPayload.grade || refreshed.inspection.grade || 'GRADE A',
-        qualityScore: fusionPayload.finalQualityScore || fusionPayload.qualityScore || refreshed.inspection.qualityScore || 86,
+        finalGrade: fusionPayload.grade ?? fresh.grade ?? 'PENDING',
+        qualityScore: fusionPayload.finalQualityScore ?? fusionPayload.qualityScore ?? fresh.qualityScore ?? 0,
         updatedAt: new Date().toISOString(),
       };
 
@@ -459,7 +488,7 @@ export const InspectionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
       const updated: InspectionRecord = {
         ...activeInspection,
-        ...refreshed.inspection,
+        ...unwrapInspection(refreshed),
         status: 'CERTIFICATE_GENERATED',
         certificateId: certObj.id,
         certificateNumber: certObj.certificateNumber,

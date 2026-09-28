@@ -43,17 +43,21 @@ from ultralytics import YOLO
 
 BASE_DIR = Path(__file__).resolve().parent
 
-# Segmentation model (detects onions)
+# Segmentation / Detection model (detects onions)
 SEG_MODEL_PATHS = [
+    BASE_DIR / "models" / "onion_detector_best.pt",
+    BASE_DIR / "runs" / "onion_detector_v3" / "weights" / "best.pt",
     BASE_DIR / "runs" / "segment" / "runs" / "onion_seg_test" / "weights" / "best.pt",
     BASE_DIR / "runs" / "segment" / "runs" / "onion_seg_test" / "weights" / "last.pt",
     BASE_DIR / "yolov8n-seg.pt",
 ]
 
-# Classification model (healthy vs unhealthy)
+# Classification model (quality)
 CLS_MODEL_PATHS = [
+    BASE_DIR / "models" / "onion_multiclass_best.pt",
+    BASE_DIR / "runs" / "multiclass" / "onion_quality_5cls" / "weights" / "best.pt",
+    BASE_DIR / "models" / "onion_quality_best.pt",
     BASE_DIR / "runs" / "classify" / "runs" / "onion_cls" / "weights" / "best.pt",
-    BASE_DIR / "runs" / "classify" / "runs" / "onion_cls" / "weights" / "last.pt",
     BASE_DIR / "yolov8n-cls.pt",
 ]
 

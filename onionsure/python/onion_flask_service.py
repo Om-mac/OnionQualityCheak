@@ -44,13 +44,30 @@ BASE_DIR = Path(__file__).resolve().parent
 ONIONCHECK_DIR = BASE_DIR.parent / "onioncheck"
 
 SEG_MODEL_PATH = ONIONCHECK_DIR / "runs" / "segment" / "runs" / "onion_seg_test" / "weights" / "best.pt"
-CLS_MODEL_PATH = ONIONCHECK_DIR / "runs" / "classify" / "runs" / "onion_cls" / "weights" / "best.pt"
+# Prefer the 5-class multi-class model; fall back to the binary healthy/unhealthy model
+CLS_MODEL_PATH_5CLS = ONIONCHECK_DIR / "models" / "onion_multiclass_best.pt"
+CLS_MODEL_PATH_BIN  = ONIONCHECK_DIR / "runs" / "classify" / "runs" / "onion_cls" / "weights" / "best.pt"
+CLS_MODEL_PATH = CLS_MODEL_PATH_5CLS if CLS_MODEL_PATH_5CLS.exists() else CLS_MODEL_PATH_BIN
+CLS_MULTICLASS = CLS_MODEL_PATH_5CLS.exists()  # True when 5-class model is loaded
 
 INFERENCE_SIZE = 640
 CLS_INFER_SIZE = 224
 CONFIDENCE = 0.25
 IOU_THRESHOLD = 0.4
 MAX_DET = 30
+
+# Size rules. A pixel->cm scale is only trustworthy when the caller supplies a
+# calibration reference, so the nominal constant below is used for DISPLAY only
+# and never drives the undersized decision when no calibration is available.
+UNDERSIZED_CM = 4.0          # absolute cutoff, used when px_per_cm is known
+UNDERSIZED_RELATIVE = 0.45   # uncalibrated: bulb < 45% of the frame median
+UNDERSIZED_MIN_CONF = 0.60   # ...and only on a confidently-SEGMENTED bulb
+NOMINAL_PX_PER_CM = 20.0     # display-only estimate
+
+# A binary-head `unhealthy` verdict below this confidence is treated as
+# "cannot judge" rather than a defect: it is routed to manual review and kept
+# out of the graded tally, so a near-coin-flip call cannot decide a lot's grade.
+DEFECT_MIN_CONF = 0.70
 
 CLASSES = ["healthy", "damaged", "rotten", "sprouted", "undersized"]
 
@@ -74,7 +91,7 @@ print("=" * 60)
 seg_model = None
 cls_model = None
 seg_names = {0: "onion"}
-cls_names = {0: "healthy", 1: "unhealthy"}
+cls_names = {0: "healthy", 1: "unhealthy"}  # overwritten if 5-class model loads
 
 print(f"  Checking segmentation model: {SEG_MODEL_PATH}")
 if not SEG_MODEL_PATH.exists():
@@ -153,9 +170,14 @@ def _fallback_detection():
     }
 
 
-def run_detection(image_bgr):
+def run_detection(image_bgr, px_per_cm=None):
     """Run seg + cls detection on a BGR numpy image.
     Falls back to simulated results when YOLO models are not loaded.
+
+    px_per_cm: optional pixels-per-centimetre scale for this capture. Supply it
+    only when the frame carries a known-size calibration reference; when it is
+    omitted the undersized test falls back to a scale-free comparison against
+    the median bulb in the same frame.
     """
     if not MODELS_LOADED:
         return _fallback_detection(), None
@@ -185,27 +207,47 @@ def run_detection(image_bgr):
 
     detections = []
     counts = {"healthy": 0, "damaged": 0, "rotten": 0, "sprouted": 0, "undersized": 0}
+    flagged_for_review = 0
 
+    # ---- Pass 1: geometry filtering -------------------------------------
+    # Reject bulbs clipped by a frame edge, plus implausible boxes. A partial
+    # crop gives the classifier a truncated view and it reads the cut face as
+    # a defect — the single largest source of false "damaged" calls on
+    # otherwise clean batches. An onion we cannot see in full cannot be graded.
+    #
+    # NOTE: the previous test used `and`, so a bulb clipped on only ONE axis
+    # (e.g. sitting on the top edge but centred horizontally) slipped through
+    # and was classified from a truncated crop. Any edge contact now disqualifies.
+    margin = 5
+    valid = []
+    excluded_edge = 0
+    excluded_small = 0
+    excluded_aspect = 0
     for i in range(len(boxes)):
         x1, y1, x2, y2 = boxes.xyxy[i].cpu().numpy()
         x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-        seg_conf = float(boxes.conf[i].item())
-
-        # Filter false positives
         box_w = x2 - x1
         box_h = y2 - y1
         if box_w < 30 or box_h < 30:
+            excluded_small += 1
             continue
-
-        margin = 5
-        if x1 <= margin and y1 <= margin:
+        if x1 <= margin or y1 <= margin or x2 >= w_img - margin or y2 >= h_img - margin:
+            excluded_edge += 1
             continue
-        if x2 >= w_img - margin and y2 >= h_img - margin:
-            continue
-
         aspect = box_w / box_h if box_h > 0 else 0
         if aspect > 3.0 or aspect < 0.33:
+            excluded_aspect += 1
             continue
+        valid.append((i, x1, y1, x2, y2, box_w, box_h))
+
+    # Median bulb size in THIS frame — a scale-free reference used when the
+    # caller supplies no calibration.
+    _sizes = sorted((bw + bh) / 2.0 for (_, _, _, _, _, bw, bh) in valid)
+    median_px = _sizes[len(_sizes) // 2] if _sizes else 0.0
+
+    # ---- Pass 2: classification -----------------------------------------
+    for (i, x1, y1, x2, y2, box_w, box_h) in valid:
+        seg_conf = float(boxes.conf[i].item())
 
         # Step 2: Classification
         pad = int(min(box_w, box_h) * 0.1)
@@ -228,62 +270,88 @@ def run_detection(image_bgr):
                     cls_name = cls_names.get(top1_idx, f"class_{top1_idx}")
                     cls_conf = float(probs.top1conf)
 
-        # Map to OnionSure 5-class model with enhanced heuristics
-        # NOTE: Current binary classifier (healthy/unhealthy) enhanced with
-        # image analysis heuristics to approximate 5-class classification
-        # until proper 5-class model is trained
-        
-        if cls_name.lower() == "healthy":
-            onionsure_class = "healthy"
-        elif cls_name.lower() == "unhealthy":
-            # Enhanced defect classification using image analysis
-            onionsure_class = "damaged"  # default
-            
-            if crop.size > 0 and crop.shape[0] >= 20 and crop.shape[1] >= 20:
-                # Convert to HSV for color analysis
-                crop_hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
-                
-                # 1. Check for sprouting (green tint, bright green spots)
-                # Green: H=35-85, S=40-255, V=40-255
-                green_lower = np.array([35, 40, 40])
-                green_upper = np.array([85, 255, 255])
-                green_mask = cv2.inRange(crop_hsv, green_lower, green_upper)
-                green_ratio = np.count_nonzero(green_mask) / green_mask.size
-                
-                # 2. Check for rot (dark spots, low brightness, brown/black areas)
-                gray_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-                dark_mask = gray_crop < 50  # very dark pixels
-                dark_ratio = np.count_nonzero(dark_mask) / gray_crop.size
-                avg_brightness = np.mean(gray_crop)
-                brightness_variance = np.var(gray_crop)
-                
-                # 3. Check for brown/black rot coloration
-                # Brown/Black in HSV: H=0-30, low S, low V
-                rot_lower = np.array([0, 0, 0])
-                rot_upper = np.array([30, 255, 80])
-                rot_mask = cv2.inRange(crop_hsv, rot_lower, rot_upper)
-                rot_ratio = np.count_nonzero(rot_mask) / rot_mask.size
-                
-                # Classification logic based on heuristics
-                if green_ratio > 0.12:  # 12%+ green indicates sprouting
-                    onionsure_class = "sprouted"
-                elif dark_ratio > 0.25 or rot_ratio > 0.20 or (avg_brightness < 75 and brightness_variance < 400):
-                    # Significant dark areas, brown/black spots, or low brightness + low variance = rot
-                    onionsure_class = "rotten"
-                # else: remains "damaged" (default for unhealthy but not rot/sprout)
+        # Map to the OnionSure 5-class model.
+        # When the 5-class model (onion_multiclass_best.pt) is loaded, its
+        # direct top-1 prediction is already one of the 5 quality classes, so
+        # no heuristics are needed.  The old binary model path falls back to
+        # colour/shape heuristics to approximate the split.
+        #
+        # `None` means "not asserted" — a near-coin-flip call on the binary
+        # head is routed to manual review instead.
+        onionsure_class = None
+
+        if CLS_MULTICLASS:
+            # ── 5-class model: direct prediction ──────────────────────────
+            cls_lower = cls_name.lower()
+            if cls_lower in ("healthy", "damaged", "rotten", "sprouted", "undersized"):
+                onionsure_class = cls_lower
+            elif cls_conf < DEFECT_MIN_CONF:
+                onionsure_class = None  # low-confidence -> review
+            else:
+                onionsure_class = "damaged"  # safety fallback
         else:
-            onionsure_class = "damaged"
+            # ── Binary model: heuristic split ──────────────────────────────
+            if cls_name.lower() == "healthy":
+                onionsure_class = "healthy"
+            elif cls_name.lower() == "unhealthy":
+                if cls_conf >= DEFECT_MIN_CONF:
+                    onionsure_class = "damaged"  # default
+                    if crop.size > 0 and crop.shape[0] >= 20 and crop.shape[1] >= 20:
+                        crop_hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+                        green_mask = cv2.inRange(crop_hsv,
+                                                 np.array([35, 40, 40]),
+                                                 np.array([85, 255, 255]))
+                        green_ratio = np.count_nonzero(green_mask) / green_mask.size
+                        gray_crop   = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+                        dark_ratio  = np.count_nonzero(gray_crop < 50) / gray_crop.size
+                        rot_mask    = cv2.inRange(crop_hsv,
+                                                  np.array([0, 0, 0]),
+                                                  np.array([30, 255, 80]))
+                        rot_ratio   = np.count_nonzero(rot_mask) / rot_mask.size
+                        avg_brightness     = np.mean(gray_crop)
+                        brightness_variance = np.var(gray_crop)
+                        if green_ratio > 0.12:
+                            onionsure_class = "sprouted"
+                        elif dark_ratio > 0.25 or rot_ratio > 0.20 or \
+                             (avg_brightness < 75 and brightness_variance < 400):
+                            onionsure_class = "rotten"
+                # else: below DEFECT_MIN_CONF -> left as None, routed to review
 
-        # Size estimation (rough diameter in cm, assuming ~20 px/cm)
+        # Size estimation. The reported size uses the caller's calibration when
+        # present, otherwise a nominal px/cm approximation kept for display.
         diameter_px = (box_w + box_h) / 2
-        diameter_cm = round(diameter_px / 20.0, 2)
-        
-        # Undersized check overrides other classifications
-        # (a sprouted/rotten onion can also be undersized)
-        if diameter_cm < 4.0:
-            onionsure_class = "undersized"
+        diameter_cm = round(diameter_px / (px_per_cm or NOMINAL_PX_PER_CM), 2)
 
-        counts[onionsure_class] += 1
+        if onionsure_class is None:
+            flagged_for_review += 1
+        else:
+            # The undersized DECISION never trusts that nominal constant — it
+            # drifts with camera distance and image resolution. With a real
+            # calibration we apply an absolute 4.0 cm rule; without one we fall
+            # back to a strict relative test against the median bulb in this frame.
+            if px_per_cm:
+                size_says_undersized = diameter_cm < UNDERSIZED_CM
+            else:
+                size_says_undersized = (
+                    median_px > 0 and diameter_px < median_px * UNDERSIZED_RELATIVE
+                )
+
+            # Either way the bulb must be a CONFIDENT SEGMENTATION. A weakly
+            # segmented blob is usually a gap between bulbs, a fragment or a
+            # shadow; letting one drive a size-based grading decision is how a
+            # stray 8%-wide speck became a defect and dragged a clean lot down a
+            # band. (Gate on the segmenter, not the classifier: the classifier
+            # reports high confidence even for a crop that is not really an onion.)
+            is_undersized = size_says_undersized and seg_conf >= UNDERSIZED_MIN_CONF
+
+            # Undersized downgrades a bulb the classifier called healthy. A bulb
+            # already called rotten or sprouted keeps that more severe label —
+            # relabelling it "undersized" (quality weight 0.7 vs 0.0) would
+            # silently inflate the vision score.
+            if is_undersized and onionsure_class == "healthy":
+                onionsure_class = "undersized"
+
+            counts[onionsure_class] += 1
 
         # Bounding box in percentage for frontend overlay
         bbox_pct = {
@@ -298,7 +366,7 @@ def run_detection(image_bgr):
 
         detections.append({
             "id": f"det_{i}",
-            "class": onionsure_class,
+            "class": onionsure_class if onionsure_class is not None else "uncertain",
             "label": cls_name,
             "confidence": round(seg_conf, 2),
             "classification_confidence": round(cls_conf, 2),
@@ -307,11 +375,25 @@ def run_detection(image_bgr):
             "size": int(diameter_cm * 10),  # mm
             "diameter_cm": diameter_cm,
             "category": "healthy" if cls_name.lower() == "healthy" else "defective",
+            # True when the head was not confident enough to assert a verdict.
+            # Excluded from `counts`/`total` and surfaced for manual review.
+            "review": onionsure_class is None,
         })
 
-    total = len(detections)
+    # Only asserted verdicts are graded. A bulb sent to review is neither a
+    # defect nor a pass, so it must not appear in the denominator either.
+    total = sum(counts.values())
     if total == 0:
-        return {"success": False, "error": "No valid onions detected after filtering"}, None
+        return {
+            "success": False,
+            "error": "No onions could be confidently graded",
+            "hint": (
+                f"All {flagged_for_review} detected bulb(s) fell below the "
+                f"{DEFECT_MIN_CONF} confidence floor and were routed to manual review. "
+                "Re-capture with better lighting/framing."
+            ),
+            "flagged_for_review": flagged_for_review,
+        }, None
 
     # Calculate percentages
     percentages = {c: round((counts[c] / total) * 100, 1) for c in CLASSES}
@@ -351,7 +433,21 @@ def run_detection(image_bgr):
             "defect_rate": defect_rate,
             "vision_score": vision_score,
             "confidence": 0.95,
+            # Bulbs the detector saw but could not grade. Surfaced so a small
+            # graded sample is never mistaken for a small lot.
+            "excluded": {
+                "edge_clipped": excluded_edge,
+                "too_small": excluded_small,
+                "bad_aspect": excluded_aspect,
+                "total": excluded_edge + excluded_small + excluded_aspect,
+            },
+            # Bulbs that were segmented but whose verdict the head could not
+            # assert. They are neither defects nor passes.
+            "flagged_for_review": flagged_for_review,
         },
+        "flagged_for_review": [
+            d["id"] for d in detections if d.get("review")
+        ],
         "image_dimensions": {"width": w_img, "height": h_img},
         "annotated_image": annotated,
     }, annotated
@@ -361,6 +457,21 @@ def image_to_base64(image_bgr):
     """Convert BGR image to base64 string."""
     _, buffer = cv2.imencode(".jpg", image_bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
     return base64.b64encode(buffer).decode("utf-8")
+
+
+def _parse_px_per_cm(value):
+    """Coerce an optional pixels-per-centimetre calibration into a float.
+
+    Returns None when absent or unusable, which makes run_detection fall back
+    to the scale-free relative undersized test rather than trusting a guess.
+    """
+    if value is None or value == "":
+        return None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    return v if v > 0 else None
 
 
 # ==========================================================================
@@ -377,8 +488,42 @@ def health():
             "segmentation": str(SEG_MODEL_PATH.name),
             "classification": str(CLS_MODEL_PATH.name),
         },
+        "multiclass": CLS_MULTICLASS,
+        "classes": list(CLASSES),
         "time": datetime.now().isoformat(),
     })
+
+
+@app.route("/api/reload-model", methods=["POST"])
+def reload_model():
+    """Hot-swap the classifier to the 5-class model after training completes.
+    Call this endpoint once train_multiclass_quality.py has finished.
+    No restart required.
+    """
+    global cls_model, cls_names, CLS_MULTICLASS, MODELS_LOADED
+    target = CLS_MODEL_PATH_5CLS
+    if not target.exists():
+        return jsonify({
+            "success": False,
+            "error": f"5-class model not found at {target}. "
+                     "Run onioncheck/train_multiclass_quality.py first.",
+        }), 404
+    try:
+        new_model = YOLO(str(target))
+        cls_model  = new_model
+        cls_names  = new_model.names
+        CLS_MULTICLASS = True
+        MODELS_LOADED  = seg_model is not None and cls_model is not None
+        print(f"[reload-model] Loaded 5-class model: {target}")
+        print(f"[reload-model] Classes: {cls_names}")
+        return jsonify({
+            "success": True,
+            "model": str(target.name),
+            "classes": cls_names,
+            "multiclass": True,
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/api/detect", methods=["POST"])
@@ -403,7 +548,9 @@ def detect():
         return jsonify({"success": False, "error": f"Invalid image: {e}"}), 400
 
     # Run detection
-    result, annotated = run_detection(image_bgr)
+    result, annotated = run_detection(
+        image_bgr, px_per_cm=_parse_px_per_cm(request.form.get("px_per_cm"))
+    )
 
     if annotated is not None:
         result["annotated_image_base64"] = image_to_base64(annotated)
@@ -431,7 +578,9 @@ def detect_base64():
     except Exception as e:
         return jsonify({"success": False, "error": f"Invalid base64 image: {e}"}), 400
 
-    result, annotated = run_detection(image_bgr)
+    result, annotated = run_detection(
+        image_bgr, px_per_cm=_parse_px_per_cm(data.get("px_per_cm"))
+    )
 
     if annotated is not None:
         result["annotated_image_base64"] = image_to_base64(annotated)

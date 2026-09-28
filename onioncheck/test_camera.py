@@ -21,7 +21,7 @@ def test_camera(camera_index=0):
     cap = cv2.VideoCapture(camera_index)
     
     if not cap.isOpened():
-        print(f"❌ ERROR: Cannot open camera {camera_index}")
+        print(f"[X] ERROR: Cannot open camera {camera_index}")
         print("\nTroubleshooting:")
         print("1. Check if camera is connected")
         print("2. Close other apps using camera (Zoom, Teams, etc.)")
@@ -34,7 +34,7 @@ def test_camera(camera_index=0):
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = int(cap.get(cv2.CAP_PROP_FPS))
     
-    print(f"✓ Camera {camera_index} opened successfully!")
+    print(f"[OK] Camera {camera_index} opened successfully!")
     print(f"  Resolution: {width}x{height}")
     print(f"  FPS: {fps}")
     print("\nPress 'Q' to quit preview...")
@@ -82,7 +82,7 @@ def test_camera(camera_index=0):
         cap.release()
         cv2.destroyAllWindows()
     
-    print(f"\n✓ Camera test completed. Processed {frame_count} frames.\n")
+    print(f"\n[OK] Camera test completed. Processed {frame_count} frames.\n")
     return True
 
 

@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../lib/api';
 import { Card, Spinner } from '../../components/ui';
+import { gradeLabel } from '../../lib/grades';
 import type { FusionResult } from '../../lib/types';
 import { useInspection } from '../../context/InspectionContext';
 import { WorkflowHeader } from '../../components/procurement/WorkflowHeader';
@@ -422,7 +423,7 @@ function FusionWorkspace({ inspectionId }: { inspectionId: string }) {
                       {caseNum === 3 ? 'Multimodal Fusion Result' : caseNum === 2 ? 'Vision Assessment Result' : 'IoT Assessment Result'}
                     </div>
                     <div className={`mt-1 text-3xl font-extrabold tracking-tight ${gradeColor(fusion.grade)}`}>
-                      {fusion.grade}
+                      {gradeLabel(fusion.grade)}
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-4 text-sm font-semibold text-ink">
                       <span>Score: <b className="font-mono text-lg text-forest">{fusion.finalScore ?? fusion.qualityScore}/100</b></span>

@@ -78,7 +78,7 @@ This will check:
 - **Streamlit Dashboard**: Interactive web UI
 - **REST API**: For integrations
 - **Python Module**: Direct code access
-- **Django Integration**: Ready to add to farmlink
+- **Django Integration**: Ready to add to onionsure
 
 ### 3. Professional Features
 - Calibration tools
@@ -130,13 +130,13 @@ Professional dashboard:
 
 ---
 
-## 🔗 Integration with FarmLink Django
+## 🔗 Integration with onionsure Django
 
 ### Quick Integration Steps
 
 1. **Copy detection module to Django project:**
 ```bash
-cp defect_detection.py "../farmlink/farmers/"
+cp defect_detection.py "../onionsure/farmers/"
 ```
 
 2. **Add to Django app** (see DEFECT_DETECTION_GUIDE.md for full details):
@@ -422,4 +422,4 @@ Happy detecting! 🔍🧅
 
 **Version**: 2.0  
 **Created**: September 3, 2026  
-**Platform**: FarmLink Agricultural Supply Chain
+**Platform**: onionsure Agricultural Supply Chain

@@ -270,7 +270,7 @@ onionsure/
 │   ├── gas_quality_detector.py
 │   └── fusion_service.py
 ├── database/schema.sql      # PostgreSQL production schema
-├── ARCHITECTURE_AUDIT.md    # Audit of the original farmlink.zip + evolution plan
+├── ARCHITECTURE_AUDIT.md    # Audit of the original onionsure.zip + evolution plan
 └── README.md
 ```
 

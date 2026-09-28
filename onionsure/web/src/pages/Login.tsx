@@ -18,7 +18,7 @@ const DEMO: Record<Role, string> = {
   procurement_officer: 'officer1', fpo: 'fpo1', farmer: 'farmer1', buyer: 'buyer1', admin: 'admin',
 };
 
-/* ---------------- FarmLink feature data ---------------- */
+/* ---------------- onionsure feature data ---------------- */
 const FEATURES = [
   {
     icon: ShoppingCart,
@@ -73,7 +73,7 @@ function CountUp({ value, duration = 1600 }: { value: number; duration?: number 
   return <span ref={ref}>{display.toLocaleString('en-IN')}</span>;
 }
 
-/* ---------------- FarmLink leaf logo ---------------- */
+/* ---------------- onionsure leaf logo ---------------- */
 function FarmLeaf({ size = 26, className = '' }: { size?: number; className?: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" className={className} aria-hidden>
@@ -100,7 +100,7 @@ function FarmLeaf({ size = 26, className = '' }: { size?: number; className?: st
 }
 
 /* ============================================================
-   FarmLink Login
+   onionsure Login
    - Left 52%: premium promotional panel (new)
    - Right 48%: existing authentication (unchanged behavior)
    ============================================================ */
@@ -170,7 +170,7 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-bg flex">
-      {/* ============== LEFT — FarmLink Premium Panel ============== */}
+      {/* ============== LEFT — onionsure Premium Panel ============== */}
       <div className="relative hidden lg:flex w-[52%] flex-col overflow-hidden bg-emerald-950 text-white">
         {/* Background photo — smooth panning high-res smart agriculture image */}
         <motion.img
@@ -235,10 +235,10 @@ export default function Login() {
             </div>
             <div className="leading-none">
               <div className="text-xl font-extrabold tracking-tight text-white">
-                Farm<span className="text-fresh">Link</span>
+                Onion<span className="text-fresh">Sure</span>
               </div>
               <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-200/80">
-                Connecting Farms to Markets
+                Quality Intelligence Platform
               </div>
             </div>
           </motion.div>
@@ -266,7 +266,7 @@ export default function Login() {
               transition={{ duration: 0.7, delay: 0.35, ease: [0.22, 1, 0.36, 1] }}
               className="mt-5 max-w-[440px] text-[14px] xl:text-[15px] leading-relaxed text-emerald-100/80"
             >
-              FarmLink is an AI-powered digital marketplace that connects Farmers, FPOs and Buyers in a transparent, trusted and efficient agri-ecosystem.
+              OnionSure is an AI-powered digital quality platform that connects Farmers, FPOs and Buyers in a transparent, trusted and efficient agri-ecosystem.
             </motion.p>
 
             {/* Ecosystem graphic (right of features on wide) */}
@@ -323,14 +323,14 @@ export default function Login() {
               <FarmLeaf size={24} />
             </div>
             <div className="leading-none">
-              <div className="text-[10px] uppercase tracking-[0.2em] text-muted">FarmLink</div>
-              <div className="text-lg font-extrabold text-ink">Connecting Farms to Markets</div>
+              <div className="text-[10px] uppercase tracking-[0.2em] text-muted">OnionSure</div>
+              <div className="text-lg font-extrabold text-ink">Quality Intelligence Platform</div>
             </div>
           </div>
 
           {/* Heading */}
           <h2 className="text-[28px] font-extrabold tracking-tight text-ink">
-            {mode === 'login' ? 'Welcome to FarmLink' : 'Create Farmer Account'}
+            {mode === 'login' ? 'Welcome to OnionSure' : 'Create Farmer Account'}
           </h2>
           <p className="mt-1.5 text-[14px] text-muted">
             {mode === 'login'
@@ -636,7 +636,7 @@ function StatItem({ stat }: { stat: typeof STATS[number] }) {
   );
 }
 
-/* Animated ecosystem graphic — central FarmLink icon, satellite nodes, connecting lines */
+/* Animated ecosystem graphic — central onionsure icon, satellite nodes, connecting lines */
 function EcosystemGraphic() {
   // Central pulse rings
   return (

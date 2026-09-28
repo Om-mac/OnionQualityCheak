@@ -70,8 +70,8 @@ async function textPresent(page, text, timeout = 8000) {
     // STEP 1 — App loads
     console.log('STEP 1: load /login');
     await page.goto(BASE + '/login', { waitUntil: 'networkidle2', timeout: 30000 });
-    const loaded = await textPresent(page, 'FarmLink', 5000);
-    check('App loads with branding (FarmLink)', loaded);
+    const loaded = await textPresent(page, 'onionsure', 5000);
+    check('App loads with branding (onionsure)', loaded);
     await page.screenshot({ path: `${OUT}/01_login.png` });
 
     // STEP 2 — Toggle to signup

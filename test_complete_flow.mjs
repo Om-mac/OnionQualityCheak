@@ -78,6 +78,7 @@ async function test() {
 
     // 5. Verify IoT in db.json
     console.log('[5/15] Verify IoT persistence in db.json...');
+    await new Promise(r => setTimeout(r, 100));
     const db = JSON.parse(fs.readFileSync('onionsure/server/data/db.json', 'utf8'));
     const sensors = (db.sensor_readings || []).filter(s => s.inspectionId === inspectionId);
     if (sensors.length === 0) throw new Error('IoT data not in db.json');

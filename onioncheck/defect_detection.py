@@ -81,6 +81,24 @@ DEFECT_CLASSES = {
         "color": (0, 165, 255),  # Bright Orange (BGR)
         "description": "Double growth/split defect"
     },
+    "damaged": {
+        "category": "moderate_defect",
+        "severity": 2,
+        "color": (0, 140, 255),  # Deep Orange (BGR)
+        "description": "Mechanical damage / bruising"
+    },
+    "undersized": {
+        "category": "minor_defect",
+        "severity": 1,
+        "color": (211, 0, 148),  # Purple (BGR)
+        "description": "Bulb size below standard"
+    },
+    "healthy": {
+        "category": "healthy",
+        "severity": 0,
+        "color": (0, 255, 0),    # Bright Green (BGR)
+        "description": "Good quality onion"
+    },
     
     # SEVERE DEFECTS
     "black smut": {
@@ -346,29 +364,44 @@ def detect_specific_defects(image_roi: np.ndarray, defect_type: str) -> Dict:
 # MAIN DEFECT DETECTION FUNCTION
 # ==========================================================================
 
+_LOCAL_DETECTOR = None
+_LOCAL_CLASSIFIER = None
+
+def get_local_models():
+    global _LOCAL_DETECTOR, _LOCAL_CLASSIFIER
+    if _LOCAL_DETECTOR is None:
+        try:
+            from ultralytics import YOLO
+            det_p = BASE_DIR / "models" / "onion_detector_best.pt"
+            if not det_p.exists():
+                det_p = BASE_DIR / "runs" / "onion_detector_v3" / "weights" / "best.pt"
+            if det_p.exists():
+                _LOCAL_DETECTOR = YOLO(str(det_p))
+        except Exception as e:
+            print(f"Warning: Could not load local detector: {e}")
+    if _LOCAL_CLASSIFIER is None:
+        try:
+            from ultralytics import YOLO
+            cls_p = BASE_DIR / "models" / "onion_multiclass_best.pt"
+            if not cls_p.exists():
+                cls_p = BASE_DIR / "runs" / "multiclass" / "onion_quality_5cls" / "weights" / "best.pt"
+            if cls_p.exists():
+                _LOCAL_CLASSIFIER = YOLO(str(cls_p))
+        except Exception as e:
+            print(f"Warning: Could not load local classifier: {e}")
+    return _LOCAL_DETECTOR, _LOCAL_CLASSIFIER
+
+
 def detect_defects_with_sizing(
     image_path: str,
     pixels_per_cm: float = PIXELS_PER_CM,
-    confidence_threshold: float = 0.4
+    confidence_threshold: float = 0.28,
+    prefer_local: bool = True
 ) -> Dict:
     """
     Complete defect detection pipeline with size estimation.
-    
-    Args:
-        image_path: Path to input image
-        pixels_per_cm: Calibration factor for size estimation
-        confidence_threshold: Minimum confidence for detection
-        
-    Returns:
-        Dictionary containing:
-        - total_detected: Total number of onions detected
-        - defect_summary: Count by defect type
-        - severity_summary: Count by severity level
-        - detections: List of detailed detection results
-        - annotated_image: Image with bounding boxes and labels
-        - statistics: Overall batch statistics
+    Supports both trained local YOLO models (fast, offline) and Roboflow cloud API.
     """
-    
     # Load image
     image = cv2.imread(str(image_path))
     if image is None:
@@ -377,9 +410,71 @@ def detect_defects_with_sizing(
     original_image = image.copy()
     image_height, image_width = image.shape[:2]
     
-    # Run Roboflow inference
-    result = CLIENT.infer(image, model_id=MODEL_ID)
-    predictions = result.get("predictions", [])
+    predictions = []
+    
+    # 1. Try local model first if preferred or available
+    if prefer_local:
+        det_m, cls_m = get_local_models()
+        if det_m is not None:
+            try:
+                res = det_m(image, conf=confidence_threshold, iou=0.45, verbose=False)[0]
+                if res.boxes is not None:
+                    for b in res.boxes:
+                        xyxy = b.xyxy[0].cpu().numpy().astype(int)
+                        bx1, by1, bx2, by2 = xyxy
+                        bw = bx2 - bx1
+                        bh = by2 - by1
+                        if bw < 20 or bh < 20:
+                            continue
+                        cx = (bx1 + bx2) / 2.0
+                        cy = (by1 + by2) / 2.0
+                        det_c = float(b.conf[0])
+                        
+                        # Classify quality
+                        top_label = "onion"
+                        if cls_m is not None:
+                            crop = image[max(0, by1):min(image_height, by2), max(0, bx1):min(image_width, bx2)]
+                            if crop.size > 0:
+                                c_out = cls_m(crop, verbose=False)[0]
+                                if c_out.probs is not None:
+                                    top_idx = int(c_out.probs.top1)
+                                    top_label = cls_m.names.get(top_idx, "onion")
+                        
+                        predictions.append({
+                            "class": top_label,
+                            "confidence": det_c,
+                            "x": cx,
+                            "y": cy,
+                            "width": float(bw),
+                            "height": float(bh)
+                        })
+            except Exception as e:
+                print(f"[!] Local inference fallback error: {e}")
+
+    # 2. Fallback to Roboflow if local yielded no predictions or wasn't preferred
+    if not predictions and CLIENT is not None:
+        try:
+            result = CLIENT.infer(image, model_id=MODEL_ID)
+            predictions = result.get("predictions", [])
+        except Exception as e:
+            print(f"[!] Roboflow infer error: {e}")
+            # Try local as last resort if not tried yet
+            if not prefer_local:
+                det_m, cls_m = get_local_models()
+                if det_m is not None:
+                    res = det_m(image, conf=confidence_threshold, iou=0.45, verbose=False)[0]
+                    if res.boxes is not None:
+                        for b in res.boxes:
+                            xyxy = b.xyxy[0].cpu().numpy().astype(int)
+                            bx1, by1, bx2, by2 = xyxy
+                            predictions.append({
+                                "class": "onion",
+                                "confidence": float(b.conf[0]),
+                                "x": (bx1 + bx2) / 2.0,
+                                "y": (by1 + by2) / 2.0,
+                                "width": float(bx2 - bx1),
+                                "height": float(by2 - by1)
+                            })
     
     # Initialize counters
     defect_counts = {}
@@ -550,11 +645,11 @@ def detect_defects_with_sizing(
             (total_detected - severity_counts["healthy"]) / max(total_detected, 1) * 100, 2
         ),
         "average_size_cm": round(
-            np.mean([d["size_estimation"]["diameter_cm"] for d in detections])
-            if detections else 0, 2
+            float(np.mean([d["size_estimation"]["diameter_cm"] for d in detections]))
+            if detections else 0.0, 2
         ),
         "total_estimated_weight_g": round(
-            sum(d["size_estimation"]["estimated_weight_g"] for d in detections), 1
+            float(sum(d["size_estimation"]["estimated_weight_g"] for d in detections)), 1
         )
     }
     

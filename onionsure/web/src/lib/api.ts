@@ -40,7 +40,12 @@ async function req<T = any>(path: string, opts: { method?: string; body?: any } 
   if (!res.ok) {
     if (res.status === 401) onUnauthorized?.();
     let msg = res.statusText;
-    try { const e = await res.json(); msg = e.error || msg; } catch {}
+    try {
+      const e = await res.json();
+      // Surface the server's `hint` alongside the error so the operator sees
+      // what to do next instead of a bare failure message.
+      msg = e.hint ? `${e.error || msg} — ${e.hint}` : (e.error || msg);
+    } catch {}
     throw new Error(msg);
   }
   return res.status === 204 ? (null as any) : res.json();

@@ -173,8 +173,86 @@ function ensure() {
   return applyAliases(cache);
 }
 
+/* ------------------------------------------------------------------
+ * Persistence
+ *
+ * This used to be a synchronous, pretty-printed rewrite of the ENTIRE cache
+ * on every single mutation:
+ *
+ *     fs.writeFileSync(DATA_FILE, JSON.stringify(cache, null, 2))
+ *
+ * One vision capture inserts an analysis row plus up to 200 detection rows, so
+ * a single photo meant ~201 full-database writes — over a gigabyte of blocking
+ * I/O. That starved the event loop, so every page load queued behind it and the
+ * process sat at ~100% of a core.
+ *
+ * Writes are now coalesced: mutations mark the cache dirty and one async,
+ * atomic write is scheduled. A burst of 200 inserts costs one write.
+ * ------------------------------------------------------------------ */
+
+let dirty = false;
+let writing = false;
+let writeTimer = null;
+
+/** Coalescing window. Long enough to absorb a burst, short enough to be safe. */
+const WRITE_DEBOUNCE_MS = 40;
+
 function persist() {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(cache, null, 2));
+  dirty = true;
+  if (writing || writeTimer) return;
+  writeTimer = setTimeout(flush, WRITE_DEBOUNCE_MS);
+}
+
+function flush() {
+  writeTimer = null;
+  if (writing || !dirty) return;
+  dirty = false;
+  writing = true;
+
+  let json;
+  try {
+    // No pretty-printing: it inflated the file ~40% for no benefit.
+    json = JSON.stringify(cache);
+  } catch (e) {
+    writing = false;
+    console.error('[db] serialize failed:', e.message);
+    return;
+  }
+
+  // Temp file + rename, so a crash mid-write can never leave a truncated
+  // db.json behind. (Readers were intermittently hitting "Unterminated string".)
+  const tmp = `${DATA_FILE}.tmp`;
+  fs.writeFile(tmp, json, (err) => {
+    if (err) {
+      writing = false;
+      console.error('[db] write failed:', err.message);
+      return;
+    }
+    fs.rename(tmp, DATA_FILE, (renameErr) => {
+      writing = false;
+      if (renameErr) console.error('[db] rename failed:', renameErr.message);
+      if (dirty) persist(); // mutations arrived while we were writing
+    });
+  });
+}
+
+/** Flush synchronously. Used on shutdown so the last write is never lost. */
+function persistSync() {
+  if (writeTimer) { clearTimeout(writeTimer); writeTimer = null; }
+  if (!dirty) return;
+  dirty = false;
+  try {
+    const tmp = `${DATA_FILE}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(cache));
+    fs.renameSync(tmp, DATA_FILE);
+  } catch (e) {
+    console.error('[db] sync flush failed:', e.message);
+  }
+}
+
+/* Don't lose the final debounced write when the process is asked to stop. */
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => { persistSync(); process.exit(0); });
 }
 
 function id(prefix) {
@@ -221,6 +299,8 @@ module.exports = {
   EMPTY,
   get: () => ensure(),
   persist,
+  /** Write pending changes immediately (synchronous). Used by tests/shutdown. */
+  persistSync,
   // Several route modules call db.save(); it is just persist() under another
   // name. Without this alias those handlers throw "db.save is not a function".
   save: () => persist(),

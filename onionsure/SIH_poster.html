@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:1080px; height:620px; }
+  body { font-family:"Segoe UI","Inter",Arial,Helvetica,sans-serif; background:#fff; color:#1a1a2e; overflow:hidden; }
+  .canvas { width:1080px; height:620px; padding:8px 10px 10px; display:flex; flex-direction:column; }
+
+  /* HEADER */
+  .header { height:46px; flex:0 0 46px; display:flex; align-items:center; justify-content:space-between; position:relative; }
+  .team { display:flex; align-items:center; gap:7px; }
+  .team .tname { font-size:14px; font-weight:700; color:#111; line-height:1.05; }
+  .title-box { position:absolute; left:50%; transform:translateX(-50%); border:2.2px solid #2b2b2b; border-radius:3px;
+               padding:4px 26px; font-size:20px; font-weight:800; letter-spacing:1.6px; color:#111; background:#fff; }
+  .sih { display:flex; align-items:center; gap:7px; }
+  .sih .badge { width:34px; height:34px; border-radius:50%; background:radial-gradient(circle at 32% 28%,#4caf50,#1b5e20 70%);
+                display:flex; align-items:center; justify-content:center; color:#fff; font-size:9px; font-weight:800; border:1.6px solid #e65100; }
+  .sih .txt { font-size:8.6px; font-weight:800; letter-spacing:.7px; color:#e65100; line-height:1.25; text-align:center; }
+
+  /* BODY */
+  .body { flex:1; display:flex; gap:9px; padding-top:2px; min-height:0; }
+  .left { width:690px; display:flex; flex-direction:column; gap:8px; min-height:0; }
+  .right { width:361px; display:flex; flex-direction:column; min-height:0; }
+
+  .panel { border:1.6px solid #9aa0a6; border-radius:5px; background:#fff; position:relative; }
+  .panel-label { position:absolute; top:-10px; left:50%; transform:translateX(-50%); background:#fff; padding:1px 10px;
+                 font-size:10px; font-weight:800; letter-spacing:.8px; white-space:nowrap; border:1.8px solid #20242b; border-radius:3px; }
+  .panel-label.label-red { color:#c0392b; border-color:#c0392b; }
+
+  /* METHODOLOGY */
+  .method { height:292px; flex:0 0 292px; padding:16px 8px 8px; }
+  .flow { display:flex; align-items:center; height:100%; }
+
+  .actor { width:66px; flex:0 0 66px; display:flex; flex-direction:column; align-items:center; gap:3px; }
+  .actor .cap { font-size:7.6px; font-weight:700; text-align:center; line-height:1.15; color:#20242b; }
+  .actor .sub { font-size:6.4px; color:#5f6368; text-align:center; line-height:1.1; }
+
+  .arrow { width:16px; flex:0 0 16px; display:flex; align-items:center; justify-content:center; }
+
+  .vbox { border:1.6px solid #2b2b2b; border-radius:4px; padding:5px 5px; display:flex; flex-direction:column;
+          align-items:center; justify-content:center; text-align:center; gap:2px; }
+  .vbox .h { font-size:8.4px; font-weight:800; line-height:1.15; }
+  .vbox .s { font-size:6.7px; color:#5f6368; line-height:1.2; }
+  .green { background:#e9f6ea; border-color:#4caf50; } .green .h { color:#1b5e20; }
+  .blue  { background:#eaf2fd; border-color:#3b78d8; } .blue  .h { color:#1a4d9e; }
+  .amber { background:#fff6e5; border-color:#e8a33d; } .amber .h { color:#8a5a00; }
+
+  .stage1 { width:80px; flex:0 0 80px; height:100%; }
+  .dual { width:118px; flex:0 0 118px; height:100%; display:flex; flex-direction:column; gap:6px; }
+  .dual .vbox { flex:1; }
+  .engine { width:78px; flex:0 0 78px; display:flex; flex-direction:column; align-items:center; gap:3px; }
+  .engine .ring { width:48px; height:48px; border-radius:50%; background:radial-gradient(circle at 34% 30%,#5ab0f0,#1565c0 72%);
+                  display:flex; align-items:center; justify-content:center; border:2px solid #0d47a1; }
+  .engine .cap { font-size:8px; font-weight:800; color:#1565c0; text-align:center; line-height:1.1; }
+  .scale { width:96px; flex:0 0 96px; height:100%; display:flex; flex-direction:column; gap:6px; }
+  .scale .vbox { flex:1; }
+
+  .caps { width:140px; flex:0 0 140px; margin-left:8px; display:flex; flex-direction:column; justify-content:center; gap:5px; }
+  .cap-row { display:flex; align-items:center; gap:4px; }
+  .cap-row .ic { width:14px; height:14px; flex:0 0 14px; border-radius:3px; border:1.3px solid #37474f;
+                 display:flex; align-items:center; justify-content:center; background:#eceff1; }
+  .cap-row .tx { font-size:6.7px; line-height:1.15; color:#20242b; font-weight:600; }
+
+  /* OUTCOME STRIP */
+  .outcome { height:28px; flex:0 0 28px; border:1.8px solid #4caf50; border-radius:4px; background:#e9f6ea;
+             display:flex; align-items:center; justify-content:center; }
+  .outcome .oh { font-size:9.2px; font-weight:800; color:#1b5e20; letter-spacing:.2px; }
+
+  /* BOTTOM */
+  .bottom { flex:1; display:flex; gap:9px; min-height:0; }
+  .techstack { width:301px; flex:0 0 301px; padding:16px 8px 8px; }
+  .research  { flex:1; padding:16px 8px 8px; }
+
+  .logo-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:7px 2px; }
+  .logo { display:flex; flex-direction:column; align-items:center; gap:3px; }
+  .logo .mk { width:26px; height:26px; border-radius:6px; display:flex; align-items:center; justify-content:center;
+              color:#fff; font-size:9px; font-weight:800; }
+  .logo .nm { font-size:6.6px; font-weight:700; color:#20242b; text-align:center; line-height:1.05; }
+
+  .pill-grid { display:flex; flex-wrap:wrap; gap:7px 8px; justify-content:center; align-content:center; height:100%; }
+  .pill { border:1.5px solid #37474f; border-radius:999px; padding:5px 12px; font-size:7.4px; font-weight:700;
+          color:#20242b; background:#fafafa; white-space:nowrap; }
+  .pill.hi { background:#e9f6ea; border-color:#4caf50; color:#1b5e20; }
+
+  /* RIGHT PANEL */
+  .mission { flex:1; background:#fdf7ee; border:2px solid #2e7d32; border-radius:6px; display:flex; flex-direction:column; overflow:hidden; }
+  .mhead { display:flex; align-items:center; gap:6px; padding:7px 9px 4px; }
+  .mhead .mt { font-size:11.4px; font-weight:800; color:#2e7d32; letter-spacing:.5px; line-height:1.05; }
+  .steps { flex:1; display:flex; flex-direction:column; padding:0 8px 8px; }
+  .step { flex:1; display:flex; align-items:center; gap:7px; position:relative; }
+  .step .disc { width:38px; height:38px; flex:0 0 38px; border-radius:50%;
+                background:radial-gradient(circle at 34% 28%,#7cc47f,#2e7d32 75%);
+                display:flex; align-items:center; justify-content:center; border:1.8px solid #fff;
+                box-shadow:0 1px 3px rgba(0,0,0,.28); }
+  .step .txt { flex:1; }
+  .step .txt .st { font-size:8.2px; font-weight:800; color:#1b5e20; line-height:1.12; }
+  .step .txt .sd { font-size:6.4px; color:#4a4a4a; line-height:1.18; margin-top:1px; }
+  .spine { position:absolute; left:19px; top:38px; bottom:-4px; width:2px; background:linear-gradient(#a5d6a7,#ffe0b2); z-index:0; }
+</style>
+</head>
+<body>
+<div class="canvas">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="team">
+      <svg width="24" height="26" viewBox="0 0 24 26">
+        <circle cx="12" cy="7" r="5" fill="#1a1a2e"/>
+        <path d="M2 26c0-6 4.5-10 10-10s10 4 10 10z" fill="#1a1a2e"/>
+      </svg>
+      <div class="tname">Team<br>OnionSure</div>
+    </div>
+    <div class="title-box">TECHNICAL APPROACH</div>
+    <div class="sih">
+      <div class="txt">SMART INDIA<br>HACKATHON<br>2026</div>
+      <div class="badge">SIH</div>
+    </div>
+  </div>
+
+  <div class="body">
+    <div class="left">
+
+      <!-- METHODOLOGY -->
+      <div class="panel method">
+        <div class="panel-label label-red">METHODOLOGY</div>
+        <div class="flow">
+
+          <div class="actor">
+            <div class="cap">Actor:</div>
+            <svg width="24" height="26" viewBox="0 0 24 26">
+              <circle cx="12" cy="7" r="5" fill="#37474f"/>
+              <path d="M2 26c0-6 4.5-10 10-10s10 4 10 10z" fill="#37474f"/>
+            </svg>
+            <div class="cap">Procurement<br>Officer</div>
+            <div class="sub">@ Mandi / FPO<br>Centre</div>
+          </div>
+
+          <div class="arrow"><svg width="15" height="9" viewBox="0 0 18 10"><path d="M0 5h13M11 1l5 4-5 4" stroke="#37474f" stroke-width="1.5" fill="none"/></svg></div>
+
+          <div class="stage1">
+            <div class="vbox blue" style="height:100%">
+              <svg width="19" height="17" viewBox="0 0 20 18"><rect x="1" y="4" width="18" height="12" rx="2" fill="#1a4d9e"/><circle cx="10" cy="10" r="3.4" fill="#fff"/><rect x="6" y="1" width="6" height="3" rx="1" fill="#1a4d9e"/></svg>
+              <div class="h">Register Lot</div>
+              <div class="s">Farmer, FPO, crop,<br>variety, quantity<br>&rarr; Lot ID issued</div>
+            </div>
+          </div>
+
+          <div class="arrow"><svg width="15" height="9" viewBox="0 0 18 10"><path d="M0 5h13M11 1l5 4-5 4" stroke="#37474f" stroke-width="1.5" fill="none"/></svg></div>
+
+          <div class="dual">
+            <div class="vbox green">
+              <div class="h">VISION PATH</div>
+              <div class="s">YOLOv8n-seg detects<br>every bulb &rarr; YOLOv8n-cls<br>grades its condition</div>
+            </div>
+            <div class="vbox green">
+              <div class="h">IoT PATH</div>
+              <div class="s">8-channel sensor pod<br>&rarr; gas spoilage stage<br>(C&#8322;H&#8324;, CH&#8324;, NH&#8323;)</div>
+            </div>
+          </div>
+
+          <div class="arrow"><svg width="15" height="9" viewBox="0 0 18 10"><path d="M0 5h13M11 1l5 4-5 4" stroke="#37474f" stroke-width="1.5" fill="none"/></svg></div>
+
+          <div class="engine">
+            <div class="ring">
+              <svg width="28" height="28" viewBox="0 0 30 30">
+                <circle cx="11" cy="12" r="7" fill="none" stroke="#fff" stroke-width="1.7"/>
+                <circle cx="19" cy="12" r="7" fill="none" stroke="#fff" stroke-width="1.7"/>
+                <circle cx="15" cy="20" r="7" fill="none" stroke="#fff" stroke-width="1.7"/>
+                <circle cx="15" cy="15" r="2.4" fill="#fff"/>
+              </svg>
+            </div>
+            <div class="cap">AI Fusion<br>Engine</div>
+          </div>
+
+          <div class="arrow"><svg width="15" height="9" viewBox="0 0 18 10"><path d="M0 5h13M11 1l5 4-5 4" stroke="#37474f" stroke-width="1.5" fill="none"/></svg></div>
+
+          <div class="scale">
+            <div class="vbox amber">
+              <div class="h">Fuse for Score</div>
+              <div class="s">Confidence-weighted<br>vision + gas +<br>environment</div>
+            </div>
+            <div class="vbox amber">
+              <div class="h">Assign Grade</div>
+              <div class="s">Grade A / URS /<br>Rejected<br>+ risk level</div>
+            </div>
+          </div>
+
+          <div class="caps">
+            <div class="cap-row"><div class="ic"><svg width="8" height="8" viewBox="0 0 10 10"><circle cx="5" cy="5" r="3.4" fill="none" stroke="#37474f" stroke-width="1.3"/></svg></div><div class="tx">Detects hidden internal spoilage</div></div>
+            <div class="cap-row"><div class="ic"><svg width="8" height="8" viewBox="0 0 10 10"><rect x="1" y="1" width="8" height="8" rx="1.4" fill="none" stroke="#37474f" stroke-width="1.3"/></svg></div><div class="tx">Classifies 5 defect types</div></div>
+            <div class="cap-row"><div class="ic"><svg width="8" height="8" viewBox="0 0 10 10"><path d="M1 8l3-4 2 2 3-4" fill="none" stroke="#37474f" stroke-width="1.4"/></svg></div><div class="tx">Counts up to 30 bulbs / frame</div></div>
+            <div class="cap-row"><div class="ic"><svg width="8" height="8" viewBox="0 0 10 10"><circle cx="5" cy="5" r="2" fill="none" stroke="#37474f" stroke-width="1.3"/><path d="M5 .8v1.6M5 7.6v1.6M.8 5h1.6M7.6 5h1.6" stroke="#37474f" stroke-width="1.1"/></svg></div><div class="tx">Compensates for lighting variance</div></div>
+            <div class="cap-row"><div class="ic"><svg width="8" height="8" viewBox="0 0 10 10"><path d="M1 9V1M1 9h8" stroke="#37474f" stroke-width="1.3"/></svg></div><div class="tx">Filters undersized bulbs (&lt;4 cm)</div></div>
+            <div class="cap-row"><div class="ic"><svg width="8" height="8" viewBox="0 0 10 10"><path d="M1 5h8M5 1v8" stroke="#37474f" stroke-width="1.3"/></svg></div><div class="tx">Estimates diameter via px/cm</div></div>
+            <div class="cap-row"><div class="ic"><svg width="8" height="8" viewBox="0 0 10 10"><path d="M1 7l4-4 4 4" fill="none" stroke="#37474f" stroke-width="1.4"/></svg></div><div class="tx">Overrides camera on gas risk</div></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- OUTCOME -->
+      <div class="outcome">
+        <div class="oh">Trust-Tagged Quality Certificate &mdash; Vision-Verified &middot; Gas-Checked &middot; QR-Verifiable, &lt; 2 min</div>
+      </div>
+
+      <!-- BOTTOM -->
+      <div class="bottom">
+        <div class="panel techstack">
+          <div class="panel-label">TECH STACK</div>
+          <div class="logo-grid">
+            <div class="logo"><div class="mk" style="background:#61dafb;color:#0b1a2b">R</div><div class="nm">React 18</div></div>
+            <div class="logo"><div class="mk" style="background:#3178c6">TS</div><div class="nm">TypeScript</div></div>
+            <div class="logo"><div class="mk" style="background:#339933">JS</div><div class="nm">Node.js</div></div>
+            <div class="logo"><div class="mk" style="background:#3776ab">Py</div><div class="nm">Python 3</div></div>
+            <div class="logo"><div class="mk" style="background:#ee4c2c">PT</div><div class="nm">PyTorch</div></div>
+            <div class="logo"><div class="mk" style="background:#5c3ee8">CV</div><div class="nm">OpenCV</div></div>
+            <div class="logo"><div class="mk" style="background:#111">Fl</div><div class="nm">Flask</div></div>
+            <div class="logo"><div class="mk" style="background:#ff6b00">Y8</div><div class="nm">Ultralytics</div></div>
+            <div class="logo"><div class="mk" style="background:#06b6d4">TW</div><div class="nm">Tailwind</div></div>
+            <div class="logo"><div class="mk" style="background:#4169e1">PG</div><div class="nm">PostgreSQL</div></div>
+            <div class="logo"><div class="mk" style="background:#2496ed">Dk</div><div class="nm">Docker</div></div>
+            <div class="logo"><div class="mk" style="background:#e7352c">E</div><div class="nm">ESP32</div></div>
+          </div>
+        </div>
+
+        <div class="panel research">
+          <div class="panel-label">RESEARCH MODELS / LIBRARIES</div>
+          <div class="pill-grid">
+            <div class="pill hi">YOLOv8n-seg</div>
+            <div class="pill hi">YOLOv8n-cls</div>
+            <div class="pill hi">Random Forest*</div>
+            <div class="pill">OpenCV</div>
+            <div class="pill">PyTorch</div>
+            <div class="pill">Ultralytics</div>
+            <div class="pill">Flask</div>
+            <div class="pill">FastAPI</div>
+            <div class="pill">Prisma</div>
+            <div class="pill">Recharts</div>
+            <div class="pill">Pipecat</div>
+            <div class="pill">Sarvam AI</div>
+            <div class="pill">Azure GPT-4o</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="right">
+      <div class="mission">
+        <div class="mhead">
+          <svg width="22" height="22" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="10" fill="none" stroke="#2e7d32" stroke-width="1.8"/>
+            <circle cx="12" cy="12" r="4.4" fill="none" stroke="#e65100" stroke-width="1.8"/>
+            <path d="M12 2v4M12 18v4M2 12h4M18 12h4" stroke="#2e7d32" stroke-width="1.8"/>
+          </svg>
+          <div class="mt">MISSION-AT-THE-EDGE<br>DATA-FLOW</div>
+        </div>
+
+        <div class="steps">
+          <div class="step">
+            <div class="spine"></div>
+            <div class="disc"><svg width="19" height="19" viewBox="0 0 20 20"><rect x="1.5" y="5" width="17" height="12" rx="2" fill="#fff" opacity=".92"/><circle cx="10" cy="11" r="3.2" fill="#2e7d32"/><rect x="6.5" y="2" width="7" height="3.4" rx="1" fill="#fff" opacity=".92"/></svg></div>
+            <div class="txt">
+              <div class="st">1. Sample &amp; Capture</div>
+              <div class="sd">Officer registers the lot and binds the sensor pod; sample images captured at the mandi.</div>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="spine"></div>
+            <div class="disc"><svg width="19" height="19" viewBox="0 0 20 20"><path d="M10 17V4M5 9l5-5 5 5" stroke="#fff" stroke-width="2" fill="none"/><path d="M3 17h14" stroke="#fff" stroke-width="2"/></svg></div>
+            <div class="txt">
+              <div class="st">2. Data Transfer</div>
+              <div class="sd">Sensor telemetry and images stream straight to the edge unit &mdash; no cloud round-trip needed.</div>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="spine"></div>
+            <div class="disc"><svg width="19" height="19" viewBox="0 0 20 20"><circle cx="10" cy="10" r="7" fill="none" stroke="#fff" stroke-width="1.7"/><circle cx="10" cy="10" r="2.6" fill="#fff"/><path d="M10 3V.8M10 19.2V17M3 10H.8M19.2 10H17" stroke="#fff" stroke-width="1.7"/></svg></div>
+            <div class="txt">
+              <div class="st">3. Vision Engine</div>
+              <div class="sd">YOLOv8 detects every bulb, then classifies its condition &mdash; running fully offline on-device.</div>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="spine"></div>
+            <div class="disc"><svg width="19" height="19" viewBox="0 0 20 20"><rect x="1.5" y="1.5" width="7" height="7" rx="1" fill="#fff" opacity=".92"/><rect x="11.5" y="1.5" width="7" height="7" rx="1" fill="#fff" opacity=".92"/><rect x="1.5" y="11.5" width="7" height="7" rx="1" fill="#fff" opacity=".92"/><rect x="11.5" y="11.5" width="7" height="7" rx="1" fill="#fff" opacity=".5"/></svg></div>
+            <div class="txt">
+              <div class="st">4. Trust-Tagged Output</div>
+              <div class="sd">Nothing hidden: every bulb marked Healthy, Damaged, Rotten, Sprouted or Undersized.</div>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="spine"></div>
+            <div class="disc"><svg width="19" height="19" viewBox="0 0 20 20"><circle cx="7.4" cy="8" r="4.6" fill="none" stroke="#fff" stroke-width="1.6"/><circle cx="12.6" cy="8" r="4.6" fill="none" stroke="#fff" stroke-width="1.6"/><circle cx="10" cy="13.4" r="4.6" fill="none" stroke="#fff" stroke-width="1.6"/><circle cx="10" cy="10" r="1.7" fill="#fff"/></svg></div>
+            <div class="txt">
+              <div class="st">5. Fusion &amp; Decision</div>
+              <div class="sd">Vision, gas and environment fused into one score, one grade and one risk level.</div>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="disc"><svg width="19" height="19" viewBox="0 0 20 20"><rect x="3" y="1.5" width="14" height="17" rx="1.6" fill="#fff" opacity=".92"/><path d="M6 6h8M6 9h8M6 12h5" stroke="#2e7d32" stroke-width="1.4"/><circle cx="13.4" cy="15" r="2.6" fill="#e65100"/></svg></div>
+            <div class="txt">
+              <div class="st">6. Certificate &amp; Verification</div>
+              <div class="sd">QR-verifiable certificate issued on-site; any buyer verifies it anywhere, instantly.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

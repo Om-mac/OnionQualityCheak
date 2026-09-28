@@ -8,6 +8,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../lib/api';
 import { GradeBadge, ProgressBar, EmptyState } from '../../components/ui';
+import { gradeLabel } from '../../lib/grades';
 import { Donut } from '../../components/charts';
 import { PageTransition, Stagger, StaggerItem, AnimatedNumber } from '../../components/motion';
 import { useLiveData } from '../../hooks/useLiveData';
@@ -190,7 +191,7 @@ export default function FarmerDashboard() {
               </div>
               <p className="text-[12px] text-gray-500">Latest Grade</p>
               <div className="flex items-end gap-2 mt-0.5">
-                <span className="text-[34px] font-black text-[#1B4332] leading-none">{certs[0].grade}</span>
+                <span className="text-[34px] font-black text-[#1B4332] leading-none">{gradeLabel(certs[0].grade)}</span>
                 <span className="mb-1 text-[18px] font-black text-gray-900">{certs[0].qualityScore}<span className="text-[12px] text-gray-400">/100</span></span>
               </div>
               <p className="text-[11px] text-gray-400 font-mono mt-1">{certs[0].certificateNumber}</p>

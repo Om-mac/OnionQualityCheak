@@ -14,6 +14,10 @@ export default function AIAnalysis() {
   const [savedToInspection, setSavedToInspection] = useState(false);
   const [saveErr, setSaveErr] = useState('');
   const [isRunning, setIsRunning] = useState(false);
+  /* Bulbs the detector segmented but could not confidently judge. They are
+     excluded from the graded counts, so the operator needs to see them — a
+     9-bulb tally from a 10-bulb frame is not the same as a 9-bulb frame. */
+  const [reviewCount, setReviewCount] = useState(0);
 
   useEffect(() => {
     const urlId = searchParams.get('inspectionId');
@@ -26,14 +30,49 @@ export default function AIAnalysis() {
     setSavedToInspection(false);
     setSaveErr('');
 
-    const counts = result.counts || {};
-    const healthyCount = counts.Healthy || counts.healthy || 12;
-    const damagedCount = counts.Damaged || counts.damaged || 3;
-    const rottenCount = counts.Rotten || counts.rotten || 2;
-    const sproutedCount = counts.Sprouted || counts.sprouted || 1;
-    const undersizedCount = counts.Undersized || counts.undersized || 2;
-    const totalDetected = result.total || (healthyCount + damagedCount + rottenCount + sproutedCount + undersizedCount);
-    const confidence = result.confidence ? Math.round(result.confidence * 100) : 94;
+    /* Counts must reflect what the detector actually saw.
+       `counts.healthy || 12` style defaulting was wrong twice over: a genuine 0
+       is falsy, so `undersized: 0` silently became 2 and `sprouted: 0` became 1;
+       and a missing count invented bulbs that were never in the frame. Both
+       corrupt the grade and the audit trail. Read each count with Number(), and
+       fall back only to a real tally of the detections we were handed. */
+    const num = (v: any) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 ? n : 0;
+    };
+    const raw = result.counts || {};
+    const dets: any[] = Array.isArray(result.detections) ? result.detections : [];
+
+    const tally = (key: string) =>
+      dets.filter((d) => String(d?.class || '').toLowerCase() === key).length;
+    const pick = (upper: string, lower: string, key: string) =>
+      raw[upper] != null || raw[lower] != null
+        ? num(raw[upper] ?? raw[lower])
+        : tally(key);
+
+    const healthyCount = pick('Healthy', 'healthy', 'healthy');
+    const damagedCount = pick('Damaged', 'damaged', 'damaged');
+    const rottenCount = pick('Rotten', 'rotten', 'rotten');
+    const sproutedCount = pick('Sprouted', 'sprouted', 'sprouted');
+    const undersizedCount = pick('Undersized', 'undersized', 'undersized');
+
+    const counted = healthyCount + damagedCount + rottenCount + sproutedCount + undersizedCount;
+    const totalDetected = num(result.total) || counted;
+
+    // Bulbs the detector would not commit to. Reported, never graded.
+    setReviewCount(
+      num(result.flaggedForReview) ||
+      dets.filter((d) => d?.review === true).length,
+    );
+
+    /* Confidence comes from the model or is averaged from the detections —
+       never from a hardcoded constant. */
+    const detConf = dets.length
+      ? dets.reduce((a, d) => a + (Number(d?.confidence) || 0), 0) / dets.length
+      : 0;
+    const confidence = result.confidence
+      ? Math.round(result.confidence * 100)
+      : Math.round(detConf * 100);
 
     try {
       await saveAiAnalysis({
@@ -63,6 +102,7 @@ export default function AIAnalysis() {
     setIsRunning(true);
     setSaveErr('');
     setSavedToInspection(false);
+    setReviewCount(0);
 
     try {
       // Use demo data - simulates AI analysis
@@ -93,6 +133,20 @@ export default function AIAnalysis() {
       navigate('/quality/fusion');
     }
   };
+
+  /* "Continue to Fusion Intelligence" must not hinge on a single transient flag.
+     If an analysis already exists for this inspection — saved on an earlier
+     visit, or the session is already past the AI step — the operator has to be
+     able to move on. Otherwise a page reload, or an analysis persisted by the
+     live camera, would strand them on this screen with a dead button. */
+  const ANALYSIS_DONE = [
+    'AI_ANALYSIS_COMPLETED', 'FUSION_PENDING', 'FUSION_COMPLETED',
+    'GRADE_ASSIGNED', 'CERTIFICATE_GENERATED', 'COMPLETED',
+  ];
+  const analysisReady =
+    savedToInspection ||
+    Boolean(activeInspection?.aiAnalysis) ||
+    ANALYSIS_DONE.includes(String(activeInspection?.status || ''));
 
   return (
     <div className="space-y-5">
@@ -126,6 +180,17 @@ export default function AIAnalysis() {
         </div>
       )}
 
+      {reviewCount > 0 && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber/30 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-800">
+          <AlertCircle size={15} className="mt-0.5 shrink-0" />
+          <span>
+            <strong>{reviewCount}</strong> bulb{reviewCount === 1 ? '' : 's'} could not be confidently
+            graded and {reviewCount === 1 ? 'is' : 'are'} excluded from the counts below. Inspect
+            {reviewCount === 1 ? ' it' : ' them'} by hand — a low-confidence call is neither a pass nor a defect.
+          </span>
+        </div>
+      )}
+
       <InspectionStudio
         role="officer"
         title="AI Vision Inspection"
@@ -137,7 +202,7 @@ export default function AIAnalysis() {
       <div className="flex items-center justify-between rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 shadow-sm">
         <div className="flex items-center gap-2 text-xs font-semibold text-emerald-950">
           <CheckCircle2 size={16} className="text-forest" />
-          {savedToInspection ? 'AI Analysis saved successfully.' : 'Run analysis using uploaded images or demo mode.'}
+          {analysisReady ? 'AI Analysis saved successfully.' : 'Run analysis using uploaded images or demo mode.'}
         </div>
 
         <div className="flex gap-2">
@@ -161,8 +226,9 @@ export default function AIAnalysis() {
 
           <button
             onClick={handleContinue}
-            disabled={!savedToInspection}
-            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-forest to-darkgreen px-6 py-3 text-sm font-extrabold text-white shadow-md hover:opacity-95 transition disabled:opacity-50"
+            disabled={!analysisReady}
+            title={analysisReady ? 'Go to Fusion Intelligence' : 'Run or save an AI analysis first'}
+            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-forest to-darkgreen px-6 py-3 text-sm font-extrabold text-white shadow-md hover:opacity-95 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Continue to Fusion Intelligence <ArrowRight size={16} />
           </button>

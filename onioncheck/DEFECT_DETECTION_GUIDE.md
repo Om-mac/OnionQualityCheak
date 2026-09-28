@@ -343,7 +343,7 @@ curl -X POST http://localhost:5000/api/calibrate \
 ### Step 1: Create Django App
 
 ```bash
-cd farmlink
+cd onionsure
 python manage.py startapp quality_inspection
 ```
 
@@ -646,7 +646,7 @@ urlpatterns = [
 ]
 ```
 
-Add to main `farmlink/urls.py`:
+Add to main `onionsure/urls.py`:
 
 ```python
 urlpatterns = [
@@ -657,7 +657,7 @@ urlpatterns = [
 
 ### Step 6: Settings
 
-Add to `farmlink/settings.py`:
+Add to `onionsure/settings.py`:
 
 ```python
 INSTALLED_APPS = [
@@ -802,4 +802,4 @@ DEFECT_CLASSES = {
 
 **Version**: 2.0  
 **Last Updated**: September 2026  
-**Developed for**: FarmLink Agricultural Platform
+**Developed for**: onionsure Agricultural Platform

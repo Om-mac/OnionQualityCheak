@@ -345,7 +345,7 @@ curl -X POST http://localhost:5000/api/calibrate \
 
 ---
 
-## 🔗 Integration with FarmLink
+## 🔗 Integration with onionsure
 
 ### Django Backend Integration
 
@@ -539,7 +539,7 @@ Found a bug or have a feature request?
 
 ## 📝 License
 
-This project is part of the FarmLink Agricultural Platform.
+This project is part of the onionsure Agricultural Platform.
 
 ---
 
@@ -570,5 +570,5 @@ For questions or support:
 ---
 
 **Last Updated**: September 2026  
-**Developed for**: FarmLink Agricultural Supply Chain Platform  
+**Developed for**: onionsure Agricultural Supply Chain Platform  
 **Technology**: YOLO, OpenCV, Roboflow, Python, Streamlit, Flask

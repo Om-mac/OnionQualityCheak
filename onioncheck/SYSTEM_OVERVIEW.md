@@ -7,7 +7,7 @@ This system provides **end-to-end AI-powered defect detection** for onion qualit
 - **Automated size estimation** calibrated to real-world measurements
 - **4-level severity classification** (Healthy → Severe)
 - **Multiple deployment options** (Web, API, Python module)
-- **Full Django integration** for farmlink platform
+- **Full Django integration** for onionsure platform
 
 ---
 
@@ -601,5 +601,5 @@ python test_defect_system.py
 
 **Version**: 2.0  
 **Last Updated**: September 3, 2026  
-**Platform**: FarmLink Agricultural Supply Chain  
+**Platform**: onionsure Agricultural Supply Chain  
 **Technology**: YOLO, OpenCV, Python, Roboflow, Streamlit, Flask, Django

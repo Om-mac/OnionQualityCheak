@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
 import { PlayCircle, RotateCcw, AlertTriangle, CheckCircle2, Radio, ScanLine, GitMerge, Award, Tractor, FlaskConical } from 'lucide-react';
 import { api } from '../lib/api';
+import { gradeLabel } from '../lib/grades';
 import { Logo } from '../components/Brand';
 
 const STEPS = ['Lot Registration', 'Sample Collection', 'IoT Pod Sensing', 'Image Capture', 'AI Analysis', 'Fusion Intelligence', 'Digital Certificate'];
@@ -157,7 +158,7 @@ function StepFusion({ r }: { r: any }) {
     <div className="mt-4 rounded-xl bg-white px-4 py-4 text-center text-emerald-950">
       <div className="text-xs uppercase tracking-widest text-emerald-600">Final Quality Score</div>
       <div className="text-4xl font-extrabold">{f.finalScore}/100</div>
-      <div className="mt-1 font-bold">{f.grade}</div>
+      <div className="mt-1 font-bold">{gradeLabel(f.grade)}</div>
     </div>
     {f.earlySpoilageAlert && <div className="mt-3 flex items-center gap-2 rounded-lg bg-amber/20 px-3 py-2 text-sm text-amber-200"><AlertTriangle size={16} /> {f.explanation}</div>}
   </Panel>;
@@ -170,7 +171,7 @@ function StepCert({ r }: { r: any }) {
       <div className="flex-1 text-sm">
         <div className="text-xs text-emerald-100/70">Certificate</div>
         <div className="font-bold">{r.certificate.certificateNumber}</div>
-        <div className="mt-2">Grade: <b>{r.certificate.grade}</b> · Score: <b>{r.certificate.qualityScore}/100</b></div>
+        <div className="mt-2">Grade: <b>{gradeLabel(r.certificate.grade)}</b> · Score: <b>{r.certificate.qualityScore}/100</b></div>
         <a href={url} target="_blank" rel="noreferrer" className="mt-2 inline-block text-fresh underline">Open public verification →</a>
       </div>
     </div>

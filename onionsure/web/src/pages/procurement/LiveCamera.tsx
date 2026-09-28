@@ -348,6 +348,7 @@ export default function LiveCamera() {
   const [aiWarn, setAiWarn] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
   const [reviewNote, setReviewNote] = useState<string | null>(null);
+  const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
 
   /* ── Refs (avoid stale closures inside intervals) ─────────────────── */
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -572,8 +573,9 @@ export default function LiveCamera() {
   };
 
   /* ── Start browser camera + live AI loop ─────────────────────────── */
-  const startCamera = async () => {
-    if (phase === 'requesting' || phase === 'live') return;
+  const startCamera = async (overrideFacing?: 'environment' | 'user') => {
+    if (phase === 'requesting' || (phase === 'live' && !overrideFacing)) return;
+    const targetFacing = overrideFacing || facingMode;
     setCamError(null); setAiWarn(null); setCameraWarn(null);
     setSource('idle'); setDetections([]); setCounts({}); setTotal(0);
     setVisionScore(null); setAvgConf(null); setLastAnalyzedAt(null);
@@ -591,11 +593,46 @@ export default function LiveCamera() {
         || /in use|busy|could not start video/i.test(String(err.message || '')));
     releaseHeldStream();
     try {
+      console.log(`[OnionSure Camera] Initializing camera (facing: ${targetFacing})...`, {
+        facingMode: targetFacing,
+        origin: window.location.origin,
+        hostname: window.location.hostname,
+        protocol: window.location.protocol,
+        isSecureContext: window.isSecureContext,
+        hasMediaDevices: Boolean((navigator as any).mediaDevices),
+        hasGetUserMedia: typeof (navigator as any)?.mediaDevices?.getUserMedia === 'function',
+      });
+
       const md = (navigator as any).mediaDevices;
       if (!md || typeof md.getUserMedia !== 'function') {
-        throw new Error('This browser does not expose navigator.mediaDevices.getUserMedia(). Use Chrome/Edge (desktop or Android), or use the Upload Image fallback below.');
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const isHttps = window.location.protocol === 'https:';
+        
+        console.error('[OnionSure Camera Error] navigator.mediaDevices.getUserMedia is unavailable.', {
+          origin: window.location.origin,
+          isSecureContext: window.isSecureContext,
+          isLocal,
+          isHttps,
+          hint: !isLocal && !isHttps
+            ? `Browser blocks camera on insecure HTTP network IP. To allow on this PC, visit chrome://flags/#unsafely-treat-insecure-origin-as-secure and add ${window.location.origin}`
+            : 'Browser or permissions do not support getUserMedia.',
+        });
+
+        if (!isLocal && !isHttps) {
+          throw new Error(
+            `Camera access blocked by browser security on network IP (${window.location.origin}). To allow: open chrome://flags/#unsafely-treat-insecure-origin-as-secure, enter "${window.location.origin}", enable it, and relaunch the browser. Or use the "Upload Image" option below.`
+          );
+        }
+
+        throw new Error('This browser does not expose navigator.mediaDevices.getUserMedia(). Use Chrome/Edge or use the Upload Image fallback below.');
       }
-      const constraints = { video: { maxWidth: 1280, maxHeight: 720 } };
+      const constraints = {
+        video: {
+          facingMode: { ideal: targetFacing },
+          maxWidth: 1920,
+          maxHeight: 1080,
+        },
+      };
       /* Acquire the camera. If the OS reports the device as busy
          (NotReadableError / AbortError — e.g. another app or a stale track
          still holds it), release everything and retry with backoff. */
@@ -606,6 +643,7 @@ export default function LiveCamera() {
             return await md.getUserMedia(constraints);
           } catch (err: any) {
             lastErr = err;
+            console.warn(`[OnionSure Camera] Attempt ${attempt + 1} failed:`, err);
             if (!isBusy(err) || attempt === 2) throw err;
             releaseHeldStream();
             setCamError('Camera is in use by another app — releasing it and retrying…');
@@ -615,13 +653,14 @@ export default function LiveCamera() {
         throw lastErr; // unreachable, satisfies control flow
       };
       const stream = await acquire();
+      console.log('[OnionSure Camera] Stream acquired successfully:', stream.getVideoTracks().map(t => ({ label: t.label, enabled: t.enabled, readyState: t.readyState })));
       setCamError(null);
       streamRef.current = stream;
       const video = videoRef.current;
       if (!video) throw new Error('Video preview element is missing.');
       (video as any).srcObject = stream;
       const playP = video.play();
-      if (playP && typeof (playP as any).catch === 'function') (playP as any).catch(() => {});
+      if (playP && typeof (playP as any).catch === 'function') (playP as any).catch((err: any) => console.warn('[OnionSure Camera] video.play() warning:', err));
       errCountRef.current = 0;
       noFrameCountRef.current = 0;
       liveRef.current = true;
@@ -630,6 +669,7 @@ export default function LiveCamera() {
       if (analyzeTimerRef.current) { window.clearInterval(analyzeTimerRef.current); analyzeTimerRef.current = null; }
       analyzeTimerRef.current = window.setInterval(runAnalysisOnce, ANALYZE_INTERVAL_MS);
     } catch (e: any) {
+      console.error('[OnionSure Camera Error Caught]:', e);
       liveRef.current = false;
       const stream = streamRef.current;
       if (stream) { try { stream.getTracks().forEach((t: any) => t.stop()); } catch { /* */ } streamRef.current = null; }
@@ -639,6 +679,18 @@ export default function LiveCamera() {
           : (e.message || 'Camera could not be started. Please check permissions and retry.')
       );
       setPhase('error');
+    }
+  };
+
+  /* ── Switch between back (environment) and front (user) camera ─────── */
+  const switchCamera = () => {
+    const nextMode = facingMode === 'environment' ? 'user' : 'environment';
+    setFacingMode(nextMode);
+    if (phase === 'live' || phase === 'paused') {
+      stopCamera();
+      setTimeout(() => {
+        void startCamera(nextMode);
+      }, 250);
     }
   };
 
@@ -935,9 +987,19 @@ export default function LiveCamera() {
               <h3 className="text-base font-bold text-ink">Camera Feed</h3>
               {frozenUrl && <Badge tone="amber">Frozen</Badge>}
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={switchCamera}
+                className="btn-secondary flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-ink"
+                title={`Switch camera (current: ${facingMode === 'environment' ? 'Back' : 'Front'})`}
+              >
+                <RefreshCw size={13} className="text-forest" />
+                <span>{facingMode === 'environment' ? '📷 Back Cam' : '🤳 Front Cam'}</span>
+              </button>
+
               {(phase === 'idle' || phase === 'error') && (
-                <button onClick={startCamera} className="btn-primary flex items-center gap-2">
+                <button onClick={() => void startCamera()} className="btn-primary flex items-center gap-2">
                   <Play size={15} /> Start Camera
                 </button>
               )}

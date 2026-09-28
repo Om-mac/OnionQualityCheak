@@ -8,6 +8,7 @@ import {
 import { motion } from 'framer-motion';
 import { api } from '../../lib/api';
 import { GradeBadge, ProgressBar } from '../../components/ui';
+import { gradeLabel } from '../../lib/grades';
 import { PageTransition, Stagger, StaggerItem, AnimatedNumber } from '../../components/motion';
 import { MOCK_FARMER_INSPECTIONS, getMockReportDetail } from './mockFarmerData';
 
@@ -348,7 +349,7 @@ export default function FarmerReport() {
                 <span className="font-extrabold text-purple-900 text-[14px]">Official Reassessment</span>
                 {previousGrade && (
                   <span className="rounded-full bg-purple-200 px-2 py-0.5 text-[10px] font-bold text-purple-800">
-                    {previousGrade} → {cert?.grade}
+                    {gradeLabel(previousGrade)} → {gradeLabel(cert?.grade)}
                   </span>
                 )}
               </div>

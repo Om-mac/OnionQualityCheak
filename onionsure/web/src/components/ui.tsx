@@ -1,6 +1,7 @@
 import React from 'react';
 import clsx from 'clsx';
 import { motion } from 'framer-motion';
+import { gradeLabel } from '../lib/grades';
 
 export function Card({ className, children, hover = false, ...p }: React.HTMLAttributes<HTMLDivElement> & { hover?: boolean }) {
   if (hover) {
@@ -142,22 +143,23 @@ export function ProgressBar({
 }
 
 export function GradeBadge({ grade }: { grade: string }) {
+  // Colour is keyed to the REAL grade; only the word is remapped. See lib/grades.
   if (grade === 'GRADE A') return (
     <span className="inline-flex items-center gap-1 rounded-full bg-forest/10 px-3 py-1 text-[11px] font-bold text-forest border border-forest/15">
       <span className="h-1.5 w-1.5 rounded-full bg-forest" />
-      GRADE A
+      {gradeLabel(grade)}
     </span>
   );
   if (grade === 'URS') return (
     <span className="inline-flex items-center gap-1 rounded-full bg-amber/15 px-3 py-1 text-[11px] font-bold text-amber-700 border border-amber/20">
       <span className="h-1.5 w-1.5 rounded-full bg-amber" />
-      URS
+      {gradeLabel(grade)}
     </span>
   );
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-reject/10 px-3 py-1 text-[11px] font-bold text-reject border border-reject/15">
       <span className="h-1.5 w-1.5 rounded-full bg-reject" />
-      REJECTED
+      {gradeLabel(grade)}
     </span>
   );
 }

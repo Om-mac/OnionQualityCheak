@@ -133,6 +133,28 @@ function callAIService(imagePath, options = {}) {
 }
 
 /**
+ * Drop embedded image payloads from a detector response before it is stored.
+ *
+ * The Python service returns the annotated frame as a base64 string. Keeping it
+ * put ~164 KB into every analysis row — the bulk of the JSON database — which
+ * made each write proportionally slower and every page load queue behind it.
+ * The image is already delivered to the client in the HTTP response, so the
+ * stored copy is pure overhead.
+ */
+function stripImageBlobs(result) {
+  if (!result || typeof result !== 'object') return result;
+  const {
+    annotated_image_base64,
+    annotated_image,
+    annotatedImage,
+    annotatedImageBase64,
+    image_base64,
+    ...rest
+  } = result;
+  return rest;
+}
+
+/**
  * Call the Python AI service with a base64-encoded image (used by the
  * browser Live Camera, which captures frames via getUserMedia and ships
  * them as data URLs). Reuses the exact same ONIONCHECK / Roboflow
@@ -287,9 +309,50 @@ router.post('/', requireAuth(), async (req, res) => {
       }
     }
 
-    if (images.length === 0) {
-      return res.status(400).json({ error: 'No images uploaded for this inspection' });
+    /* The client may already hold a real result — a Live Camera frame analysed
+       through /live-detect, or an explicit demo run — and submit the counts and
+       detections directly. In that case there is no registered image to
+       re-analyse, so persist what the client measured instead of rejecting the
+       request. Rejecting it left the UI with no way to continue to Fusion. */
+    const suppliedCounts = normalizeCounts(req.body);
+    const suppliedDetections = Array.isArray(req.body.detections) ? req.body.detections : [];
+    const suppliedTotal =
+      suppliedDetections.length ||
+      Number(req.body.totalCount || req.body.totalDetections || req.body.total || 0) ||
+      Object.values(suppliedCounts).reduce((a, b) => a + b, 0);
+
+    if (images.length === 0 && suppliedTotal === 0) {
+      return res.status(400).json({
+        error: 'No images uploaded for this inspection',
+        hint: 'Upload or capture an image first, or submit counts/detections in the request body.',
+      });
     }
+
+    // A client-supplied result is treated as a single virtual source so the
+    // aggregation below stays identical.
+    const clientSource = {
+      id: null,
+      path: null,
+      clientSupplied: true,
+      counts: suppliedCounts,
+      detections: suppliedDetections,
+      total: suppliedTotal,
+      confidence: normalizeConfidence(req.body),
+      modelName: req.body.modelName,
+      modelVersion: req.body.modelVersion,
+    };
+
+    /* Only re-analyse image records whose file is actually on disk.
+       A registered image whose file has gone missing used to consume the whole
+       request: the loop skipped it, results stayed empty, and the call 400'd —
+       even though the client was holding counts it had already measured (Live
+       Camera frame, or an explicit demo run). That left the operator stranded
+       on the AI screen with no way to reach Fusion. Prefer real images when
+       they exist; otherwise fall back to what the client measured. */
+    const usableImages = images.filter((img) => img.path && fs.existsSync(img.path));
+    const sources = usableImages.length > 0
+      ? usableImages
+      : (suppliedTotal > 0 ? [clientSource] : images);
 
     // Update inspection status
     if (inspection.status === 'CAMERA_COMPLETED') {
@@ -309,42 +372,66 @@ router.post('/', requireAuth(), async (req, res) => {
     let totalConfidence = 0;
     let analysisCount = 0;
 
-    for (const image of images) {
+    for (const image of sources) {
       try {
-        // Check if file exists
-        if (!fs.existsSync(image.path)) {
-          console.warn(`Image file not found: ${image.path}`);
-          continue;
-        }
-
         let aiResult;
-        try {
-          // Call AI service
-          aiResult = await callAIService(image.path, {
-            confidence_threshold: confidenceThreshold,
-            calibration_reference_mm: calibrationReferenceMm
-          });
-        } catch (aiServiceError) {
-          // Fallback to demo mode if Python service is not available
-          console.warn(`AI service not available, using demo mode: ${aiServiceError.message}`);
+
+        if (image.clientSupplied) {
+          // Trust the counts/detections the client already measured instead of
+          // re-running a detector over an image we do not have.
           aiResult = {
-            model_name: 'demo-onion-detector',
-            model_version: 'v1.0-demo',
-            total: 100,
-            counts: {
-              healthy: 85,
-              damaged: 8,
-              rotten: 3,
-              sprouted: 2,
-              undersized: 2
-            },
+            model_name: image.modelName || 'client-supplied-vision',
+            model_version: image.modelVersion || 'v1',
+            total: image.total,
+            counts: image.counts,
             statistics: {
-              average_confidence: 0.89
+              average_confidence: image.confidence ?? 0.9,
+              total: image.total,
+              healthyCount: image.counts.healthy,
+              damagedCount: image.counts.damaged,
+              rottenCount: image.counts.rotten,
+              sproutedCount: image.counts.sprouted,
+              undersizedCount: image.counts.undersized
             },
-            detections: [],
-            processing_time_ms: 150,
-            demo_mode: true
+            detections: image.detections,
+            processing_time_ms: 0,
+            demo_mode: false
           };
+        } else {
+          // Check if file exists
+          if (!fs.existsSync(image.path)) {
+            console.warn(`Image file not found: ${image.path}`);
+            continue;
+          }
+
+          try {
+            // Call AI service
+            aiResult = await callAIService(image.path, {
+              confidence_threshold: confidenceThreshold,
+              calibration_reference_mm: calibrationReferenceMm
+            });
+          } catch (aiServiceError) {
+            // Fallback to demo mode if Python service is not available
+            console.warn(`AI service not available, using demo mode: ${aiServiceError.message}`);
+            aiResult = {
+              model_name: 'demo-onion-detector',
+              model_version: 'v1.0-demo',
+              total: 100,
+              counts: {
+                healthy: 85,
+                damaged: 8,
+                rotten: 3,
+                sprouted: 2,
+                undersized: 2
+              },
+              statistics: {
+                average_confidence: 0.89
+              },
+              detections: [],
+              processing_time_ms: 150,
+              demo_mode: true
+            };
+          }
         }
 
         // Create AI analysis record with proper structure for database
@@ -358,8 +445,8 @@ router.post('/', requireAuth(), async (req, res) => {
           analysisType: 'VISION',
           modelName: aiResult.model_name || 'roboflow-onion-detection',
           modelVersion: aiResult.model_version || 'v1',
-          provider: 'roboflow',
-          mode: 'REAL',
+          provider: image.clientSupplied ? 'client' : 'roboflow',
+          mode: image.clientSupplied ? 'CLIENT' : 'REAL',
           status: 'COMPLETED',
           confidence: avgConf,
           confidenceThreshold,
@@ -370,7 +457,12 @@ router.post('/', requireAuth(), async (req, res) => {
           // Store counts for easy access
           counts,
           
-          // Store complete result JSON for detailed analysis and fusion
+          /* Never persist the annotated frame into the JSON store.
+             The Python service returns it as `annotated_image_base64`, and
+             storing it verbatim put ~164 KB of base64 into every analysis row —
+             it made up most of db.json and slowed every single write. The
+             frontend already receives the image in the HTTP response, so it
+             never needs to be re-read from the database. */
           resultJson: {
             detections: aiResult.detections || [],
             counts,
@@ -392,7 +484,7 @@ router.post('/', requireAuth(), async (req, res) => {
               imagePath: image.path,
               timestamp: db.nowISO()
             },
-            rawResult: aiResult
+            rawResult: stripImageBlobs(aiResult)
           },
           
           createdAt: db.nowISO()
@@ -474,6 +566,17 @@ router.post('/', requireAuth(), async (req, res) => {
       }
     }
 
+    // Nothing was actually analysed — e.g. every registered image record pointed
+    // at a file that is not on disk. Do NOT mark the inspection as analysed with
+    // all-zero counts: that would push empty evidence into Fusion and produce a
+    // meaningless grade. Fail loudly instead.
+    if (results.length === 0) {
+      return res.status(400).json({
+        error: 'No image could be analysed for this inspection',
+        hint: 'The registered image files are missing on the server. Re-capture or re-upload the sample images, or submit counts/detections directly.',
+      });
+    }
+
     // Update inspection with aggregated results
     inspection.healthyCount = totalHealthy;
     inspection.damagedCount = totalDamaged;
@@ -489,7 +592,7 @@ router.post('/', requireAuth(), async (req, res) => {
     // Log audit event
     logAIAudit(inspectionId, req.user.id, 'AI_ANALYSIS_COMPLETED', {
       metadata: {
-        imagesAnalyzed: images.length,
+        imagesAnalyzed: sources.length,
         totalDetections,
         healthy: totalHealthy,
         damaged: totalDamaged,
@@ -513,7 +616,7 @@ router.post('/', requireAuth(), async (req, res) => {
         aiConfidence: inspection.aiConfidence
       },
       summary: {
-        imagesAnalyzed: images.length,
+        imagesAnalyzed: sources.length,
         totalDetections,
         defectCounts: {
           healthy: totalHealthy,
@@ -525,7 +628,9 @@ router.post('/', requireAuth(), async (req, res) => {
         averageConfidence: analysisCount > 0 ? totalConfidence / analysisCount : null
       },
       results,
-      message: `AI analysis completed. ${totalDetections} onions detected across ${images.length} image(s).`
+      message: images.length > 0
+        ? `AI analysis completed. ${totalDetections} onions detected across ${sources.length} image(s).`
+        : `AI analysis saved from the submitted result. ${totalDetections} onions detected.`
     });
   } catch (error) {
     console.error('AI analysis error:', error);

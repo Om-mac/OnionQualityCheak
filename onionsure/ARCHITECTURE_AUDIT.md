@@ -1,6 +1,6 @@
 # OnionSure — Repository Audit & Evolution Plan
 
-> Source repo audited: `farmlink.zip` (extracted to `farmlink/`).
+> Source repo audited: `onionsure.zip` (extracted to `onionsure/`).
 > Target: **OnionSure** — AI + IoT + Computer-Vision Onion Quality Assessment, Grading & Transparent Digital Procurement (SIH 2026).
 
 ## 1. Existing Frontend Structure
@@ -10,7 +10,7 @@
 ## 2. Existing Backend Structure
 - **Django 4.2.11 + Django REST Framework 3.14** (Token auth, SQLite default, CORS).
 - Apps: `farmers`, `buyers`, `products`, `orders`, `smartcontracts` (Web3 blockchain proof-of-quality).
-- `manage.py`, `settings.py`, `farmlink/urls.py`, `farmlink/wsgi.py/asgi.py`.
+- `manage.py`, `settings.py`, `onionsure/urls.py`, `onionsure/wsgi.py/asgi.py`.
 - Heavy optional infra in `requirements.txt`: `boto3`, `web3`, `celery`, `redis`, `psycopg2-binary`, `gunicorn`.
 
 ## 3. Existing API Routes
@@ -48,13 +48,13 @@
 | Layer | Decision | Rationale |
 |-------|----------|-----------|
 | Frontend | **Build fresh** (React+TS+Tailwind) | No frontend existed |
-| Backend API | **Build fresh** (Node/Express) | Guarantees a runnable, testable system without Django+Celery+Web3 infra; reuses FarmLink's domain model & REST conventions |
-| Auth | **Build fresh** JWT + roles | FarmLink used DRF tokens; we need explicit roles |
+| Backend API | **Build fresh** (Node/Express) | Guarantees a runnable, testable system without Django+Celery+Web3 infra; reuses onionsure's domain model & REST conventions |
+| Auth | **Build fresh** JWT + roles | onionsure used DRF tokens; we need explicit roles |
 | AI vision | **DEMO/MOCK** (labeled) | No model/weights exist; honesty required by spec |
 | Gas/Env AI | **RF-style demo** (labeled) | No dataset; thresholds configurable, REAL-MODEL path documented |
 | Fusion | **Build fresh** (configurable) | Core innovation; implemented in `ai.js` + `fusion_service.py` |
 | DB | JSON store by default + **PostgreSQL schema.sql** provided | Runs with zero setup; prod schema included |
-| Original FarmLink | **Preserved** in `farmlink/` | Not deleted; referenced for domain model |
+| Original onionsure | **Preserved** in `onionsure/` | Not deleted; referenced for domain model |
 
 ## What can be REUSED
 - Domain entities (farmer, FPO, buyer, center, lot/product, order) and their relationships.

@@ -4,6 +4,7 @@ import { Radio, WifiOff, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 import { realtime, useRealtimeStatus, useRealtimeEvent, useLastDataUpdated, type RealtimeFrame } from '../lib/realtime';
 import { useToast } from './Toast';
+import { gradeLabel } from '../lib/grades';
 
 /** Turn a raw DB event into something a human would want to see. */
 function describe(frame: RealtimeFrame): { title: string; body?: string; tone: any } | null {
@@ -27,7 +28,7 @@ function describe(frame: RealtimeFrame): { title: string; body?: string; tone: a
     return { title: 'Inspection updated', body: p.status ? `Status: ${p.status}` : undefined, tone: 'info' };
   }
   if (col === 'fusion_results' && op === 'insert') {
-    return { title: 'Quality result ready', body: p.grade ? `${p.grade} · ${p.finalScore ?? ''}/100` : undefined, tone: 'success' };
+    return { title: 'Quality result ready', body: p.grade ? `${gradeLabel(p.grade)} · ${p.finalScore ?? ''}/100` : undefined, tone: 'success' };
   }
   if (col === 'config' && op === 'update') {
     return { title: 'Settings updated', body: 'Fusion weights or thresholds changed', tone: 'warn' };
