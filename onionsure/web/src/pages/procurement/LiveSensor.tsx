@@ -57,6 +57,11 @@ export default function LiveSensor() {
   const [errMsg,      setErrMsg]      = useState('');
   const deviceIdRef   = useRef<string | null>(null);
 
+  const continueWithoutIoT = () => {
+    const query = activeInspection ? `?inspectionId=${activeInspection.id}` : '';
+    navigate(`/quality/ai-analysis${query}`);
+  };
+
   useEffect(() => {
     const urlInspectionId = searchParams.get('inspectionId');
     if (urlInspectionId && urlInspectionId !== activeInspection?.id) {
@@ -205,6 +210,15 @@ export default function LiveSensor() {
               <PrimaryButton onClick={handleConnectAndCompute}>
                 <Zap size={17} /> Connect IoT
               </PrimaryButton>
+              <button
+                onClick={continueWithoutIoT}
+                className="flex items-center gap-2 text-[13px] font-bold text-forest transition hover:text-darkgreen hover:underline underline-offset-2"
+              >
+                Continue without IoT <ArrowRight size={15} />
+              </button>
+              <p className="max-w-xs text-center text-[11px] leading-relaxed text-muted">
+                Skip sensor evidence and continue directly to AI Analysis.
+              </p>
             </PodCard>
           </motion.div>
         )}
@@ -436,6 +450,12 @@ export default function LiveSensor() {
               <PrimaryButton onClick={handleReset}>
                 <Zap size={17} /> Try Again
               </PrimaryButton>
+              <button
+                onClick={continueWithoutIoT}
+                className="flex items-center gap-2 text-[13px] font-bold text-forest transition hover:text-darkgreen hover:underline underline-offset-2"
+              >
+                Continue without IoT <ArrowRight size={15} />
+              </button>
             </PodCard>
           </motion.div>
         )}

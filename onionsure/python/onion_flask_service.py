@@ -25,6 +25,7 @@ Response format matches what OnionSure's ai.js mapOnionCheckToVision expects.
 import io
 import base64
 import os
+import sys
 import threading
 import numpy as np
 from pathlib import Path
@@ -35,6 +36,9 @@ from flask_cors import CORS
 from PIL import Image
 import cv2
 from ultralytics import YOLO
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "onioncheck"))
+from roboflow_ai_analysis import analyze as analyze_with_roboflow
 
 # ==========================================================================
 # CONFIGURATION
@@ -559,6 +563,24 @@ def detect():
     result.pop("annotated_image", None)
 
     return jsonify(result)
+
+
+@app.route("/api/roboflow-detect", methods=["POST"])
+def roboflow_detect():
+    """Run the configured Roboflow model for the AI Analysis upload only."""
+    if "image" not in request.files:
+        return jsonify({"success": False, "error": "No image file provided"}), 400
+
+    file = request.files["image"]
+    try:
+        image_bytes = file.read()
+        image = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+        return jsonify(analyze_with_roboflow(image))
+    except (RuntimeError, ValueError) as error:
+        return jsonify({"success": False, "error": str(error)}), 503
+    except Exception as error:
+        print(f"[roboflow] AI Analysis inference failed: {error}")
+        return jsonify({"success": False, "error": "Roboflow inference failed"}), 502
 
 
 @app.route("/api/detect-base64", methods=["POST"])

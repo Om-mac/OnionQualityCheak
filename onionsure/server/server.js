@@ -4,6 +4,7 @@
 
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const path = require('path');
 const fs = require('fs');
 const config = require('./config');
@@ -13,7 +14,20 @@ const realtime = require('./realtime');
 const inspectionRoutes = require('./inspection-routes');
 
 const app = express();
-app.use(cors());
+const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000,http://127.0.0.1:3000')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'same-site' },
+}));
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('Origin not allowed by CORS'));
+  },
+  credentials: false,
+}));
 app.use(express.json({ limit: '15mb' }));
 
 // Health

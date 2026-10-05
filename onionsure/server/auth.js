@@ -11,6 +11,9 @@ const db = require('./db');
 const ROLES = ['procurement_officer', 'fpo', 'farmer', 'buyer', 'admin'];
 
 function signToken(user) {
+  if (!config.jwtSecret) {
+    throw new Error('JWT_SECRET must be configured');
+  }
   return jwt.sign(
     { sub: user.id, role: user.role, name: user.name, username: user.username },
     config.jwtSecret,
@@ -72,9 +75,13 @@ async function createUser({ username, password, role, name, email, centerId, fpo
 }
 
 async function authenticate(username, password) {
-  const user = db.find('users', (u) => u.username === username);
-  if (!user) return null;
-  const ok = await bcrypt.compare(password, user.passwordHash);
+  const normalizedUsername = typeof username === 'string' ? username.trim() : '';
+  const suppliedPassword = typeof password === 'string' ? password : '';
+  const user = db.find('users', (u) => u.username === normalizedUsername);
+  // Always perform a bcrypt comparison, including for unknown usernames, to
+  // reduce username-enumeration timing differences.
+  const hash = user?.passwordHash || '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
+  const ok = await bcrypt.compare(suppliedPassword, hash);
   if (!ok) return null;
   return user;
 }

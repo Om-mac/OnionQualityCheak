@@ -16,6 +16,7 @@ const db = require('./db');
 const auth = require('./auth');
 const ai = require('./ai');
 const config = require('./config');
+const rateLimit = require('express-rate-limit');
 
 const requireAuth = auth.requireAuth;
 
@@ -27,7 +28,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 
  * Forward a multipart-form (field `image`) + extra fields to the OnionCheck
  * Flask service using only Node's built-in http (no extra dependency).
  */
-function forwardToOnionCheck(buffer, filename, fields, cb) {
+function forwardToOnionCheck(buffer, filename, fields, cb, endpoint = '/api/detect') {
   const boundary = '----onionsure' + Date.now();
   const parts = [];
   for (const [k, v] of Object.entries(fields)) {
@@ -42,7 +43,7 @@ function forwardToOnionCheck(buffer, filename, fields, cb) {
   parts.push(Buffer.from(`\r\n--${boundary}--\r\n`));
   const body = Buffer.concat(parts);
 
-  const url = new URL(process.env.ONIONCHECK_URL || 'http://localhost:5000/api/detect');
+  const url = new URL(`${process.env.ONIONCHECK_URL || 'http://localhost:5000'}${endpoint}`);
   const req = http.request({
     hostname: url.hostname,
     port: url.port,
@@ -66,12 +67,31 @@ function forwardToOnionCheck(buffer, filename, fields, cb) {
 /* AUTH                                                              */
 /* ----------------------------------------------------------------- */
 
-router.post('/auth/login', async (req, res) => {
+const loginLimiter = rateLimit({
+  windowMs: config.authRateLimitWindowMs,
+  limit: config.authRateLimitMax,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts. Try again later.' },
+});
+
+router.post('/auth/login', loginLimiter, async (req, res) => {
   const { username, password } = req.body || {};
-  if (!username || !password) return res.status(400).json({ error: 'username and password required' });
+  if (
+    typeof username !== 'string' || username.length < 1 || username.length > 100 ||
+    typeof password !== 'string' || password.length < 1 || password.length > 256
+  ) {
+    return res.status(400).json({ error: 'Invalid username or password' });
+  }
   const user = await auth.authenticate(username, password);
-  if (!user) return res.status(401).json({ error: 'Invalid credentials' });
-  const token = auth.signToken(user);
+  if (!user) return res.status(401).json({ error: 'Invalid username or password' });
+  let token;
+  try {
+    token = auth.signToken(user);
+  } catch (error) {
+    console.error('Token signing failed:', error);
+    return res.status(500).json({ error: 'Authentication service unavailable' });
+  }
   const { passwordHash, ...safe } = user;
   res.json({ token, user: safe });
 });
@@ -759,9 +779,9 @@ router.patch('/inspection/:id/step', requireAuth(), (req, res) => {
 /* ----------------------------------------------------------------- */
 
 /** Promisified wrapper around forwardToOnionCheck(). */
-function callOnionCheck(buffer, filename, fields) {
+function callOnionCheck(buffer, filename, fields, endpoint = '/api/detect') {
   return new Promise((resolve, reject) => {
-    forwardToOnionCheck(buffer, filename, fields, (err, json) => (err ? reject(err) : resolve(json)));
+    forwardToOnionCheck(buffer, filename, fields, (err, json) => (err ? reject(err) : resolve(json)), endpoint);
   });
 }
 
@@ -872,7 +892,10 @@ router.post('/vision/analyze', requireAuth(), upload.single('image'), async (req
       const ocJson = await callOnionCheck(req.file.buffer, req.file.originalname || 'upload.jpg', {
         return_image: req.body.return_image || 'true',
         pixels_per_cm: String(req.body.pixels_per_cm || 38.0),
-      });
+      }, '/api/roboflow-detect');
+      if (!ocJson || ocJson.success === false) {
+        throw new Error(ocJson?.error || 'Roboflow inference returned no result');
+      }
 
       const vision = ai.buildVisionFromOnionCheck(ocJson);
       if (vision) {
@@ -901,26 +924,16 @@ router.post('/vision/analyze', requireAuth(), upload.single('image'), async (req
           originalImage,           // the untouched upload, so the user always sees their photo
           inspectionId: linkedInspectionId,
           source: 'onioncheck',
-          note: 'Live detection from the OnionCheck Roboflow model.',
+          note: 'Live detection from the configured Roboflow model.',
         });
       }
 
-      // Service answered but produced nothing usable.
-      return res.json({
-        ...ai.demoVision(),
-        originalImage,
-        source: 'demo',
-        note: ocJson?.error
-          ? `OnionCheck error: ${ocJson.error} — showing simulated result.`
-          : 'OnionCheck returned no detections — showing simulated result.',
-      });
+      throw new Error('Roboflow service returned no usable detections payload');
     } catch (err) {
-      console.error('[vision] OnionCheck unavailable:', err.message);
-      return res.json({
-        ...ai.demoVision(),
-        originalImage,
-        source: 'demo',
-        note: 'OnionCheck service unavailable — showing simulated result.',
+      console.error('[vision] Roboflow AI Analysis unavailable:', err.message);
+      return res.status(503).json({
+        error: `Roboflow AI Analysis unavailable: ${err.message}`,
+        hint: 'Configure ROBOFLOW_API_KEY in onioncheck/.env and restart the Python service.',
       });
     }
   }
