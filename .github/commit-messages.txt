@@ -1,0 +1,90 @@
+name: Auto Commit Bot
+
+on:
+  schedule:
+    # Every 5 minutes (GitHub minimum). Runs will average ~6-7 min due to jitter step.
+    - cron: '*/5 * * * *'
+  workflow_dispatch: # manual trigger for testing
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-commit
+  cancel-in-progress: false
+
+jobs:
+  auto-commit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "Om-mac"
+          git config user.email "tapdiyaom@users.noreply.github.com"
+
+      - name: Determine next commit message
+        id: next
+        run: |
+          set -e
+
+          TOTAL=$(wc -l < .github/commit-messages.txt | xargs)
+          # Number of commits AFTER the initial commit on main
+          COUNT=$(git rev-list --count HEAD)
+          # Subtract 1 for the very first "first commit"
+          INDEX=$((COUNT - 1))
+
+          echo "Total messages: $TOTAL"
+          echo "Existing commits: $COUNT"
+          echo "Next index: $INDEX"
+
+          if [ "$INDEX" -ge "$TOTAL" ]; then
+            echo "done=true" >> "$GITHUB_OUTPUT"
+            echo "All $TOTAL messages already used."
+            exit 0
+          fi
+
+          # sed is 1-based; INDEX is 0-based
+          LINE=$((INDEX + 1))
+          MSG=$(sed -n "${LINE}p" .github/commit-messages.txt)
+
+          # GitHub Actions outputs need escaping for newlines — our messages are single-line, fine.
+          {
+            echo "message=$MSG"
+            echo "index=$INDEX"
+            echo "done=false"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Will commit: $MSG"
+
+      - name: Jitter to average ~6-7 min between runs
+        if: steps.next.outputs.done == 'false'
+        run: |
+          # Skip ~25% of runs so the average interval is ~6-7 minutes
+          if [ $((RANDOM % 4)) -eq 0 ]; then
+            echo "Skipping this run for jitter."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+        id: jitter
+
+      - name: Make a change and commit
+        if: |
+          steps.next.outputs.done == 'false' &&
+          steps.jitter.outputs.skip == 'false'
+        run: |
+          MSG="${{ steps.next.outputs.message }}"
+
+          # Append to activity log so we have a real diff
+          echo "[$(date -u '+%Y-%m-%d %H:%M:%S UTC')] $MSG" >> activity.log
+
+          git add activity.log
+          git commit -m "$MSG"
+          git push origin HEAD:${{ github.ref_name }}
