@@ -21,7 +21,7 @@ COPY onionsure/server/package*.json /app/onionsure/server/
 RUN cd /app/onionsure/server && npm install --omit=dev
 
 COPY onionsure/web/package*.json /app/onionsure/web/
-RUN cd /app/onionsure/web && npm install
+RUN cd /app/onionsure/web && npm install --include=dev
 
 COPY onioncheck /app/onioncheck
 COPY onionsure/python /app/onionsure/python
@@ -29,6 +29,7 @@ COPY onionsure/server /app/onionsure/server
 COPY onionsure/web /app/onionsure/web
 
 RUN cd /app/onionsure/web && npm run build
+RUN cd /app/onionsure/web && npm prune --omit=dev
 
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
