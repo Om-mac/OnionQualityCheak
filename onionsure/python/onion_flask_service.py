@@ -855,4 +855,9 @@ if __name__ == "__main__":
     # the 'error' state and a later /api/camera/start will retry.
     threading.Thread(target=_open_camera_worker, daemon=True).start()
 
-    app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
+    app.run(
+        host="0.0.0.0",
+        port=int(os.getenv("PYTHON_PORT", "5000")),
+        debug=False,
+        threaded=True,
+    )

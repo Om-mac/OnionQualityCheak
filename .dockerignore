@@ -1,0 +1,11 @@
+.git
+.github
+**/node_modules
+**/dist
+**/__pycache__
+**/.pytest_cache
+**/.env
+**/.env.*
+!**/.env.example
+onioncheck/temp_uploads
+*.log

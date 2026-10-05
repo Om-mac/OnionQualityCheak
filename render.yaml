@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: onionsure
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ROBOFLOW_API_KEY
+        sync: false
+      - key: ROBOFLOW_MODEL_ID
+        value: veg1-hcqsf-2/4
+      - key: ROBOFLOW_API_URL
+        value: https://serverless.roboflow.com
