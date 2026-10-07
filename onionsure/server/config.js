@@ -7,7 +7,7 @@
 
 const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
-  port: process.env.PORT || 4000,
+  port: process.env.PORT || 10000,
   jwtSecret: process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'onionsure-dev-secret-change-me'),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '2h',
   authRateLimitWindowMs: parseInt(process.env.AUTH_RATE_LIMIT_WINDOW_MS || '900000', 10),

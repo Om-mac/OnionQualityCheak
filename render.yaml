@@ -2,14 +2,20 @@ services:
   - type: web
     name: onionsure
     runtime: docker
-    plan: free
+    plan: starter
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PORT
+        value: 10000
+      - key: USE_PYTHON
+        value: true
       - key: JWT_SECRET
         generateValue: true
+      - key: CORS_ORIGINS
+        value: https://onionsure.onrender.com
       - key: ROBOFLOW_API_KEY
         sync: false
       - key: ROBOFLOW_MODEL_ID
