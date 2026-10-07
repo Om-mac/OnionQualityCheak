@@ -25,16 +25,16 @@ RUN apt-get update \
         nodejs \
         npm \
         libglib2.0-0 \
-        libgl1-mesa-glx \
+        libgl1 \
         libgthread-2.0-0 \
         libsm6 \
         libxext6 \
-        libxrender-dev \
+        libxrender1 \
         libgomp1 \
         libgtk-3-0 \
-        libavcodec-dev \
-        libavformat-dev \
-        libswscale-dev \
+        libavcodec59 \
+        libavformat59 \
+        libswscale6 \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
