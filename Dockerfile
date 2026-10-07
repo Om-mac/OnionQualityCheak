@@ -2,7 +2,7 @@
 # Multi-stage build optimized for Render deployment
 
 # Stage 1: Build frontend
-FROM node:18-alpine AS frontend-builder
+FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app/web
 COPY onionsure/web/package.json ./
@@ -21,11 +21,15 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHON_PORT=5000 \
     DEBIAN_FRONTEND=noninteractive
 
-# Install Node.js and system dependencies for OpenCV and YOLO
+# Install Node.js 20 and system dependencies for OpenCV and YOLO
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
-    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    gnupg \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
     nodejs \
     libglib2.0-0 \
@@ -36,8 +40,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libgthread-2.0-0 \
     ffmpeg \
-    libsm6 \
-    libxext6 \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
