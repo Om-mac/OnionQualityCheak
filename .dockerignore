@@ -1,11 +1,85 @@
+# Git
 .git
+.gitignore
 .github
+
+# Documentation
+*.md
+!README.md
+PRESENTATION-FEATURES.md
+FARMLINK-COMPLETE-PROJECT-INFO.md
+RUN_PROJECT.md
+
+# Node modules (will be installed during build)
+node_modules
+*/node_modules
 **/node_modules
-**/dist
-**/__pycache__
-**/.pytest_cache
-**/.env
-**/.env.*
-!**/.env.example
-onioncheck/temp_uploads
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+.pytest_cache
+
+# Frontend build artifacts
+onionsure/web/dist
+onionsure/web/node_modules
+onionsure/web/.vite
+onionsure/web/vite.config.ts.timestamp-*
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test files
+*test*.js
+*test*.mjs
+*test*.py
+*test*.ps1
+e2e_test.mjs
+feature_tests.mjs
+test_*.py
+test_*.mjs
+test_*.ps1
+uitest/
+
+# Runs and screenshots
+runs/
+.shots/
+*.png
+*.jpg
+!onioncheck/**/*.jpg
+!onioncheck/**/*.png
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Render
+render.yaml
+
+# Windows
+*.bat
+
+# Logs
 *.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files
+tmp/
+temp/

@@ -2,23 +2,55 @@ services:
   - type: web
     name: onionsure
     runtime: docker
-    plan: starter
+    plan: free
+    region: oregon
     dockerfilePath: ./Dockerfile
+    dockerContext: .
     healthCheckPath: /api/health
+    autoDeploy: true
     envVars:
+      # Node.js Configuration
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 10000
+      
+      # Python AI Service
       - key: USE_PYTHON
         value: true
+      - key: PYTHON_PORT
+        value: 5000
+      - key: ONIONCHECK_URL
+        value: http://127.0.0.1:5000
+      
+      # Security
       - key: JWT_SECRET
         generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 2h
+      
+      # CORS Configuration
       - key: CORS_ORIGINS
-        value: https://onionsure.onrender.com
+        value: https://onionsure.onrender.com,https://onionqualitycheak.onrender.com
+      
+      # AI/ML Configuration (Optional - for Roboflow integration)
       - key: ROBOFLOW_API_KEY
         sync: false
       - key: ROBOFLOW_MODEL_ID
         value: veg1-hcqsf-2/4
       - key: ROBOFLOW_API_URL
         value: https://serverless.roboflow.com
+      
+      # Grading Thresholds (Optional - uses defaults if not set)
+      - key: GRADE_A_THRESHOLD
+        value: 85
+      - key: URS_THRESHOLD
+        value: 65
+      
+      # Fusion Weights (Optional - uses defaults if not set)
+      - key: FUSION_WEIGHT_VISION
+        value: 0.45
+      - key: FUSION_WEIGHT_GAS
+        value: 0.35
+      - key: FUSION_WEIGHT_ENV
+        value: 0.20
